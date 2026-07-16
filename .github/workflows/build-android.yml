@@ -30,9 +30,6 @@ jobs:
     - name: Add Android Platform
       run: npx cap add android
 
-    - name: Patch Cordova Plugin Manifest
-      run: echo '<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android" package="capacitor.android.plugins"></manifest>' > android/capacitor-cordova-android-plugins/src/main/AndroidManifest.xml
-
     - name: Build Android Release APK
       run: |
         cd android
