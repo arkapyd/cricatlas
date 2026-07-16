@@ -1,11 +1,8 @@
-// 1. pwa service worker setup
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('./sw.js')
-        .then(() => console.log('service worker registered'))
-        .catch(err => console.log('service worker failed', err));
+    navigator.serviceWorker.register('./sw.js').catch(err => console.log('service worker failed', err));
 }
 
-// 2. firebase configuration (replace with your actual config)
+// update with your keys, keeping the commas intact
 const firebaseConfig = {
   apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
   authDomain: "cricatlas.firebaseapp.com",
@@ -20,19 +17,19 @@ const firebaseConfig = {
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// 3. game state & catalog
-// stores array of objects: { fbKey, name, unique_name, full_name }
 let playersCatalog = []; 
 let usedPlayers = new Set();
 let currentLetter = '';
 let score = 0;
 let currentMode = 'easy';
+let currentCategory = 'general';
 let moveCounter = 0;
 
-// 4. ui elements
 const welcomeView = document.getElementById('welcome-view');
 const gameView = document.getElementById('game-view');
-const tabs = document.querySelectorAll('.tab-btn');
+const diffTabs = document.querySelectorAll('.diff-btn');
+const catTabs = document.querySelectorAll('.cat-btn');
+const modeHelpText = document.getElementById('mode-help-text');
 const startBtn = document.getElementById('start-btn');
 const statusBox = document.getElementById('game-status');
 const playerInput = document.getElementById('player-input');
@@ -41,47 +38,58 @@ const messageEl = document.getElementById('message');
 const chainList = document.getElementById('chain-list');
 const scoreEl = document.getElementById('score');
 const modeDisplay = document.getElementById('mode-display');
-const modeHelpText = document.getElementById('mode-help-text');
 
-// 5. event listeners
 const helpTexts = {
-    'easy': '<span>easy:</span> standard name chain rules. initials (e.g. "a sharma") are accepted and dynamically expanded by the engine.',
-    'medium': '<span>medium:</span> strict first names. you must provide the fully correct first name. initials will be rejected.',
-    'hard': '<span>hard:</span> extreme strictness. you must provide either the fully expanded birth name (e.g. "rohit gurunath sharma") or exact initials (e.g. "r g sharma").'
+    easy: "<span>easy:</span> standard name chain. initials are accepted and expanded by the engine.",
+    medium: "<span>medium:</span> strict first names. you must provide the fully correct first name. initials rejected.",
+    hard: "<span>hard:</span> extreme strictness. requires fully expanded birth names or exact full initials.",
+    general: "<span>general:</span> any verified cricketer is valid.",
+    intl: "<span>intl only:</span> player must have international, test, odi, or t20i experience.",
+    domestic: "<span>domestic only:</span> player must only have domestic experience.",
+    men: "<span>men only:</span> restricted to male cricketers.",
+    women: "<span>women only:</span> restricted to female cricketers."
 };
 
-tabs.forEach(tab => {
+function updateHelpText() {
+    if (!modeHelpText) return;
+    modeHelpText.style.opacity = '0';
+    setTimeout(() => {
+        modeHelpText.innerHTML = `${helpTexts[currentMode]}<br><br>${helpTexts[currentCategory]}`;
+        modeHelpText.style.opacity = '1';
+    }, 150);
+}
+
+diffTabs.forEach(tab => {
     tab.addEventListener('click', (e) => {
-        tabs.forEach(t => t.classList.remove('active'));
+        diffTabs.forEach(t => t.classList.remove('active'));
         e.target.classList.add('active');
         currentMode = e.target.getAttribute('data-mode');
-        
-        // update the help text dynamically
-        if (modeHelpText) {
-            modeHelpText.style.opacity = '0';
-            setTimeout(() => {
-                modeHelpText.innerHTML = helpTexts[currentMode];
-                modeHelpText.style.opacity = '1';
-            }, 150);
-        }
+        updateHelpText();
+    });
+});
+
+catTabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+        catTabs.forEach(t => t.classList.remove('active'));
+        e.target.classList.add('active');
+        currentCategory = e.target.getAttribute('data-category');
+        updateHelpText();
     });
 });
 
 startBtn.addEventListener('click', () => {
     welcomeView.style.display = 'none';
     gameView.style.display = 'block';
-    modeDisplay.textContent = `mode: ${currentMode}`;
+    modeDisplay.textContent = `mode: ${currentMode} / ${currentCategory}`;
     
     db.ref('players').once('value')
         .then(snapshot => {
             const data = snapshot.val();
-            
             if (!data) {
                 setSystemMessage("database is empty. check firebase console.", true);
                 return;
             }
 
-            // safely parse flat arrays or push-key objects and preserve the firebase key for updating
             let rawArray = [];
             let sourceData = data.players ? data.players : data;
             
@@ -103,7 +111,6 @@ startBtn.addEventListener('click', () => {
                     });
                 }
             });
-                
             startGame();
         })
         .catch(err => {
@@ -117,7 +124,6 @@ playerInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handlePlayerTurn();
 });
 
-// 6. core game & validation functions
 function startGame() {
     playerInput.disabled = false;
     submitBtn.disabled = false;
@@ -125,10 +131,7 @@ function startGame() {
     setTimeout(computerTurn, 600);
 }
 
-function getFirstLetter(name) {
-    return name.charAt(0);
-}
-
+function getFirstLetter(name) { return name.charAt(0); }
 function getLastLetterOfSurname(name) {
     const parts = name.trim().split(' ');
     const surname = parts[parts.length - 1];
@@ -144,7 +147,15 @@ function setSystemMessage(msg, isError = true) {
     }, 4500);
 }
 
-// parses a full name into pieces to enforce mode rules, dynamically handling multi-part surnames
+function scanDemographics(extract) {
+    if (!extract) return { isIntl: false, isWomen: false, isMen: false };
+    const lower = extract.toLowerCase();
+    const isIntl = lower.includes('international') || lower.includes('test match') || lower.includes('odi') || lower.includes('t20i');
+    const isWomen = /\b(she|her)\b/i.test(extract) || lower.includes("women's");
+    const isMen = /\b(he|his)\b/i.test(extract) || lower.includes("men's");
+    return { isIntl, isWomen, isMen };
+}
+
 function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     const parts = trueFullName.trim().split(/\s+/);
     if (parts.length < 2) {
@@ -153,7 +164,6 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     }
 
     let surnameIdx = parts.length - 1;
-    // detect common multi-part cricket surnames (de villiers, van der dussen, etc)
     if (parts.length >= 3 && ['de', 'van', 'le', 'du', 'von', 'mac', 'mc', 'da', 'di'].includes(parts[parts.length - 2].toLowerCase())) {
         surnameIdx = parts.length - 2;
     }
@@ -166,7 +176,6 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
 
     let givenNames = [];
     rawGiven.forEach(n => {
-        // if wikipedia failed to expand an initial block (like "HD" or "EM"), split it manually
         if (isUnresolvedAbbrev && n.length <= 3 && !/[aeiouy]/.test(n)) {
             givenNames.push(...n.split(''));
         } else {
@@ -176,22 +185,14 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
 
     const fullFirsts = givenNames.join(' ');
     const initials = givenNames.map(n => n[0]).join(''); 
-
-    return {
-        full: `${fullFirsts} ${surname}`,
-        initials: `${initials} ${surname}`,
-        givenNames: givenNames,
-        isMulti: givenNames.length > 1
-    };
+    return { full: `${fullFirsts} ${surname}`, initials: `${initials} ${surname}`, givenNames, isMulti: givenNames.length > 1 };
 }
 
-// aggressively resolves birth names via wikipedia, falling back to fuzzy search if strict fails
 async function resolveFullName(queryName) {
     const strictQuery = encodeURIComponent(`intitle:"${queryName}" cricketer`);
     const fuzzyQuery = encodeURIComponent(`${queryName} cricketer`);
     
     const fetchWiki = async (q) => {
-        // INCREASED: ask for top 5 results instead of just 1 to bypass famous non-cricketers
         const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=5&prop=extracts&exintro=1&explaintext=1`);
         return res.json();
     };
@@ -200,7 +201,6 @@ async function resolveFullName(queryName) {
         let data = await fetchWiki(strictQuery);
         let pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
 
-        // if the strict search hits nothing, pivot to fuzzy search
         if (pages.length === 0) {
             data = await fetchWiki(fuzzyQuery);
             pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
@@ -209,38 +209,26 @@ async function resolveFullName(queryName) {
         const queryParts = queryName.trim().split(/\s+/);
         const surname = queryParts[queryParts.length - 1].toLowerCase();
 
-        // LOOP through the top 5 results to find the actual cricketer
         for (let pageData of pages) {
             if (pageData.title.includes("(disambiguation)")) continue;
 
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
             const extract = pageData.extract || "";
-
-            // normalize accents (e.g. Émile -> emile) to ensure strict surname matching works
             const normalizedTitle = title.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const normalizedSurname = surname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
             if (extract.toLowerCase().includes("cricket") && normalizedTitle.includes(normalizedSurname)) {
                 const firstSentence = extract.split(/[.!?]/)[0];
-
-                // IMPROVED REGEX: grabs everything before the first bracket or comma, supporting all foreign characters
                 const match = firstSentence.match(/^([^\(\,]+)(?:\(|\,)/);
                 let trueName = match ? match[1].trim().toLowerCase() : title;
-                
-                // safety fallback if the regex grabbed too much text
                 if (trueName.split(' ').length > 5 || trueName.length > 40) trueName = title; 
                 return { resolved: trueName, extract: extract, isUnresolved: false };
             }
         }
-    } catch (e) {
-        console.error("wiki fetch error:", e);
-    }
-    
-    // wikipedia failed to find a valid cricketer in the top 5 results
+    } catch (e) { console.error("wiki fetch error:", e); }
     return { resolved: queryName.toLowerCase(), extract: null, isUnresolved: true };
 }
 
-// 7. turn handlers
 async function computerTurn() {
     setSystemMessage("cpu is calculating...", false);
     playerInput.disabled = true;
@@ -255,8 +243,8 @@ async function computerTurn() {
     let selected, trueFullName, extract, formats;
     let foundValid = false;
 
-    // attempt to find a compliant player up to 6 times to satisfy medium/hard mode rules
-    for (let i = 0; i < 6; i++) {
+    // up to 25 attempts to satisfy both difficulty and demographic category rules
+    for (let i = 0; i < 25; i++) {
         if (validCandidates.length === 0) break;
 
         const randIdx = Math.floor(Math.random() * validCandidates.length);
@@ -267,18 +255,18 @@ async function computerTurn() {
         extract = wikiData.extract;
         formats = getNameFormats(trueFullName, wikiData.isUnresolved);
 
+        // evaluate difficulty limits
         const firstGiven = formats.givenNames[0] || "";
         const isLikelyInitial = wikiData.isUnresolved && firstGiven.length <= 2;
+        if (currentMode === 'medium' && isLikelyInitial) continue; 
+        if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && firstGiven.length <= 2) continue; 
 
-        if (currentMode === 'medium' && isLikelyInitial) {
-            // CPU must provide a full first name. if wiki failed to expand an initial, discard candidate.
-            continue; 
-        }
-        
-        if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && firstGiven.length <= 2) {
-            // Hard mode requires full names or full initials. safely discard unresolved single initials.
-            continue; 
-        }
+        // evaluate demographic category limits
+        const demo = scanDemographics(extract);
+        if (currentCategory === 'intl' && !demo.isIntl) continue;
+        if (currentCategory === 'domestic' && demo.isIntl) continue;
+        if (currentCategory === 'women' && !demo.isWomen) continue;
+        if (currentCategory === 'men' && demo.isWomen) continue;
 
         foundValid = true;
         break;
@@ -286,22 +274,18 @@ async function computerTurn() {
 
     if (!foundValid) {
         statusBox.textContent = "WIN";
-        setSystemMessage("cpu exhausted valid database options. you win!", false);
+        setSystemMessage("cpu exhausted valid options for these rules. you win!", false);
         return;
     }
 
-    // remove from global catalog
     const globalIdx = playersCatalog.indexOf(selected);
     if (globalIdx > -1) playersCatalog.splice(globalIdx, 1);
 
-    // dynamically patch missing full names in firebase to speed up future lookups
     if ((currentMode === 'medium' || currentMode === 'hard') && !selected.full_name && selected.fbKey && extract) {
         db.ref('players/' + selected.fbKey).update({ full_name: trueFullName }).catch(e => console.error(e));
     }
 
     let playName = selected.name;
-
-    // format the output depending on the mode
     if (currentMode === 'medium') {
         playName = formats.full;
     } else if (currentMode === 'hard') {
@@ -316,7 +300,6 @@ async function handlePlayerTurn() {
     playerInput.value = '';
 
     if (!inputName) return;
-
     if (currentLetter !== '' && getFirstLetter(inputName) !== currentLetter) {
         setSystemMessage(`invalid: name must start with '${currentLetter.toUpperCase()}'`);
         return;
@@ -333,28 +316,40 @@ async function handlePlayerTurn() {
 
     if (usedPlayers.has(trueFullName)) {
         setSystemMessage(`invalid: ${trueFullName.toUpperCase()} already used in this game.`);
-        playerInput.disabled = false;
-        submitBtn.disabled = false;
-        playerInput.focus();
+        resetInput();
         return;
+    }
+
+    const demo = scanDemographics(extract);
+    
+    if (currentCategory === 'intl' && !demo.isIntl) {
+        setSystemMessage(`invalid: 'intl only' mode active. player profile indicates domestic only.`);
+        resetInput(); return;
+    }
+    if (currentCategory === 'domestic' && demo.isIntl) {
+        setSystemMessage(`invalid: 'domestic only' mode active. player profile indicates international experience.`);
+        resetInput(); return;
+    }
+    if (currentCategory === 'women' && !demo.isWomen) {
+        setSystemMessage(`invalid: 'women only' mode active. player demographic mismatch.`);
+        resetInput(); return;
+    }
+    if (currentCategory === 'men' && demo.isWomen) {
+        setSystemMessage(`invalid: 'men only' mode active. player demographic mismatch.`);
+        resetInput(); return;
     }
 
     const formats = getNameFormats(trueFullName, isUnresolved);
     const inputParts = inputName.split(/\s+/);
 
-    // strictly enforce user formatting based on the selected mode
     if (currentMode === 'medium') {
         if (isUnresolved && inputParts[0].length <= 2) {
-            setSystemMessage(`medium mode: fully correct first name required. we couldn't verify '${inputParts[0]}' as a full name.`);
-            playerInput.disabled = false;
-            submitBtn.disabled = false;
-            return;
+            setSystemMessage(`medium mode: fully correct first name required. couldn't verify '${inputParts[0]}'.`);
+            resetInput(); return;
         }
         if (inputParts[0] !== formats.givenNames[0]) {
             setSystemMessage(`medium mode: fully correct first name required (e.g. '${formats.givenNames[0].toUpperCase()}').`);
-            playerInput.disabled = false;
-            submitBtn.disabled = false;
-            return;
+            resetInput(); return;
         }
     } else if (currentMode === 'hard') {
         const inputCompressed = inputName.replace(/\s+/g, '');
@@ -363,19 +358,16 @@ async function handlePlayerTurn() {
 
         if (inputCompressed !== fullCompressed && inputCompressed !== initialsCompressed) {
             if (formats.isMulti) {
-                setSystemMessage(`hard mode: require all initials (e.g. '${formats.initials.toUpperCase()}') or full names (e.g. '${formats.full.toUpperCase()}').`);
+                setSystemMessage(`hard mode: require all initials (e.g. '${formats.initials.toUpperCase()}') or full names.`);
             } else {
                 if (inputParts[0] !== formats.givenNames[0]) {
-                    setSystemMessage(`hard mode: full first name required (e.g. '${formats.full.toUpperCase()}').`);
+                    setSystemMessage(`hard mode: full first name required.`);
                 }
             }
-            playerInput.disabled = false;
-            submitBtn.disabled = false;
-            return;
+            resetInput(); return;
         }
     }
 
-    // check if the exact identity exists anywhere in the catalog. if not, push to firebase.
     let playerIdx = playersCatalog.findIndex(p => p.full_name === trueFullName || p.unique_name === trueFullName || p.name === trueFullName);
     
     if (playerIdx === -1) {
@@ -391,24 +383,24 @@ async function handlePlayerTurn() {
                 const ref = await db.ref('players').push(newPlayerObj);
                 newPlayerObj.fbKey = ref.key;
                 setSystemMessage(`verified! '${inputName}' added to global database.`, false);
-            } catch(e) {
-                console.error("firebase write error:", e);
-            }
+            } catch(e) { console.error("firebase write error:", e); }
         } else {
             setSystemMessage(`'${inputName}' is not in the database and could not be verified on wikipedia.`);
-            playerInput.disabled = false;
-            submitBtn.disabled = false;
-            return;
+            resetInput(); return;
         }
     } else {
-        // remove the used iteration from the stack
         playersCatalog.splice(playerIdx, 1);
     }
 
     executeValidMove(inputName, trueFullName, extract, true);
 }
 
-// 8. rendering
+function resetInput() {
+    playerInput.disabled = false;
+    submitBtn.disabled = false;
+    playerInput.focus();
+}
+
 function executeValidMove(displayName, trueFullName, extract, isPlayer) {
     usedPlayers.add(trueFullName);
     currentLetter = getLastLetterOfSurname(displayName);
@@ -417,13 +409,11 @@ function executeValidMove(displayName, trueFullName, extract, isPlayer) {
     const div = document.createElement('div');
     div.className = `feed-item ${isPlayer ? 'player' : 'cpu'}`;
     
-    // instantly render the cached wikipedia extract so no double-fetching occurs
     let summaryHtml = `<div class="player-summary">no summary available.</div>`;
     if (extract) {
         const summaryText = extract.split('\n')[0];
-        const summaryLower = summaryText.toLowerCase();
-        const isIntl = summaryLower.includes('international') || summaryLower.includes('test match') || summaryLower.includes('odi');
-        const formatBadge = isIntl ? `<span class="badge intl">international</span>` : `<span class="badge">domestic</span>`;
+        const demo = scanDemographics(extract);
+        const formatBadge = demo.isIntl ? `<span class="badge intl">international</span>` : `<span class="badge">domestic</span>`;
         summaryHtml = `
             <div class="player-badges">${formatBadge}</div>
             <div class="player-summary">${summaryText}</div>
@@ -447,9 +437,7 @@ function executeValidMove(displayName, trueFullName, extract, isPlayer) {
         scoreEl.textContent = score;
         setTimeout(computerTurn, 1000);
     } else {
-        playerInput.disabled = false;
-        submitBtn.disabled = false;
-        playerInput.focus();
+        resetInput();
         setSystemMessage("your turn.", false);
     }
 }
