@@ -1,11 +1,11 @@
-const CACHE_NAME = 'cric-atlas-v1';
+const CACHE_NAME = 'cric-atlas-v2'; // changed to v2 to force an update
 const ASSETS_TO_CACHE = [
-    '/',
-    '/index.html',
-    '/styles.css',
-    '/app.js',
-    '/cricket_atlas.json',
-    '/manifest.json'
+    './',
+    './index.html',
+    './styles.css',
+    './app.js',
+    './cricket_atlas.json',
+    './manifest.json'
 ];
 
 self.addEventListener('install', (event) => {
