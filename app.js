@@ -12,6 +12,21 @@ let currentLetter = '';
 let score = 0;
 let currentMode = 'easy';
 
+// firebase configuration (get this from your firebase project settings)
+const firebaseConfig = {
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
+};
+
+// initialize firebase
+firebase.initializeApp(firebaseConfig);
+const db = firebase.database();
+
 // ui elements
 const welcomeView = document.getElementById('welcome-view');
 const gameView = document.getElementById('game-view');
@@ -40,19 +55,23 @@ startBtn.addEventListener('click', () => {
     gameView.style.display = 'block';
     modeDisplay.textContent = `mode: ${currentMode}`;
     
-    // load db only when starting
-    fetch('./cricket_atlas.json')
-        .then(response => response.json())
-        .then(data => {
-            // map through the array of objects to pull the name string
-            playersDb = data.map(player => player.name.toLowerCase().trim());
-            startGame();
-        })
-        .catch(err => {
-            messageEl.textContent = "system error: failed to load database.";
-            messageEl.style.color = "var(--loss)";
-            console.error(err);
-        });
+    // --- REPLACE YOUR LOCAL FETCH WITH THIS ---
+// load the global database from firebase instead of local json
+db.ref('players').once('value')
+    .then(snapshot => {
+        const data = snapshot.val();
+        if (data) {
+            // firebase might return an array or an object with push-keys; Object.values handles both
+            const playersArray = Array.isArray(data) ? data : Object.values(data);
+            playersDb = playersArray.map(player => player.name.toLowerCase().trim());
+        }
+        startGame();
+    })
+    .catch(err => {
+        messageEl.textContent = "system error: failed to connect to firebase.";
+        messageEl.style.color = "var(--loss)";
+        console.error(err);
+    });
 });
 
 function startGame() {
@@ -159,6 +178,56 @@ function fetchPlayerDetails(playerName, elementId) {
         .catch(err => {
             console.error('Wikipedia fetch error:', err);
             detailsContainer.innerHTML = `<div class="player-summary">failed to load data.</div>`;
+        });
+}
+// --- REPLACE YOUR VERIFY FUNCTION WITH THIS ---
+function verifyAndAddPlayer(inputName) {
+    setSystemMessage(`verifying '${inputName}' on wikipedia...`, false);
+    
+    const query = encodeURIComponent(inputName);
+    const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.query || !data.query.pages) {
+                setSystemMessage("player not found in database or on wikipedia.");
+                return;
+            }
+
+            const pageId = Object.keys(data.query.pages)[0];
+            const extract = data.query.pages[pageId].extract.toLowerCase();
+
+            if (extract.includes("cricketer") || extract.includes("cricket")) {
+                
+                // format exactly like your raw json structure
+                const newPlayerObj = {
+                    identifier: Math.random().toString(16).slice(2, 10),
+                    name: inputName,
+                    unique_name: inputName,
+                    all_name_variations: ""
+                };
+
+                // push the new player to the global firebase 'players' node
+                db.ref('players').push(newPlayerObj)
+                    .then(() => {
+                        // update local active memory so the rest of the game knows they exist
+                        playersDb.push(inputName);
+                        setSystemMessage(`verified! '${inputName}' added to global database.`, false);
+                        executeValidMove(inputName);
+                    })
+                    .catch(err => {
+                        console.error("firebase write error:", err);
+                        setSystemMessage("verified, but failed to sync to global database.");
+                    });
+                
+            } else {
+                setSystemMessage(`found '${inputName}' on wiki, but they don't appear to be a cricketer.`);
+            }
+        })
+        .catch(err => {
+            console.error("wiki fetch error:", err);
+            setSystemMessage("failed to connect to wikipedia for verification.");
         });
 }
 
