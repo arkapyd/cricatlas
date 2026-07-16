@@ -24,7 +24,8 @@ const scoreEl = document.getElementById('score');
 fetch('cricket_atlas.json')
     .then(response => response.json())
     .then(data => {
-        playersDb = data.map(name => name.toLowerCase().trim());
+        // extract the 'name' string from your specific object structure
+        playersDb = data.map(player => player.name.toLowerCase().trim());
         startGame();
     })
     .catch(err => {
