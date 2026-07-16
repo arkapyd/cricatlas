@@ -14,13 +14,13 @@ let currentMode = 'easy';
 
 // firebase configuration (get this from your firebase project settings)
 const firebaseConfig = {
-    apiKey: "YOUR_API_KEY",
-    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
-    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
-    projectId: "YOUR_PROJECT_ID",
-    storageBucket: "YOUR_PROJECT_ID.appspot.com",
-    messagingSenderId: "YOUR_SENDER_ID",
-    appId: "YOUR_APP_ID"
+  apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
+  authDomain: "cricatlas.firebaseapp.com",
+  projectId: "cricatlas",
+  storageBucket: "cricatlas.firebasestorage.app",
+  messagingSenderId: "858714427166",
+  appId: "1:858714427166:web:deac448d834d22bafa430f",
+  measurementId: "G-ZS4RDHBNMT"
 };
 
 // initialize firebase
