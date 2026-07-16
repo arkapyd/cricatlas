@@ -21,14 +21,17 @@ jobs:
         npm install
         npm run build
 
-    - name: Set up JDK 17
+    - name: Set up JDK 21
       uses: actions/setup-java@v3
       with:
         distribution: 'zulu'
-        java-version: '17'
+        java-version: '21'
 
     - name: Add Android Platform
       run: npx cap add android
+
+    - name: Patch Cordova Plugin Manifest
+      run: echo '<?xml version="1.0" encoding="utf-8"?><manifest xmlns:android="http://schemas.android.com/apk/res/android" package="capacitor.android.plugins"></manifest>' > android/capacitor-cordova-android-plugins/src/main/AndroidManifest.xml
 
     - name: Build Android Release APK
       run: |
