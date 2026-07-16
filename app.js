@@ -7,14 +7,13 @@ if ('serviceWorker' in navigator) {
 
 // 2. firebase configuration (replace with your actual config)
 const firebaseConfig = {
-  apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
-  authDomain: "cricatlas.firebaseapp.com",
-  databaseURL: "https://cricatlas-default-rtdb.asia-southeast1.firebasedatabase.app/",
-  projectId: "cricatlas",
-  storageBucket: "cricatlas.firebasestorage.app",
-  messagingSenderId: "858714427166",
-  appId: "1:858714427166:web:deac448d834d22bafa430f",
-  measurementId: "G-ZS4RDHBNMT"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -125,28 +124,41 @@ function setSystemMessage(msg, isError = true) {
     setTimeout(() => {
         messageEl.style.color = "var(--text-dim)";
         messageEl.textContent = "awaiting input...";
-    }, 3500);
+    }, 4500);
 }
 
-// parses a full name into pieces to enforce mode rules
-function getNameFormats(trueFullName) {
+// parses a full name into pieces to enforce mode rules, dynamically handling multi-part surnames
+function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     const parts = trueFullName.trim().split(/\s+/);
     if (parts.length < 2) {
         const lower = trueFullName.toLowerCase();
         return { full: lower, initials: lower, givenNames: [lower], isMulti: false };
     }
 
-    // safely detach surnames with prefixes
     let surnameIdx = parts.length - 1;
-    if (parts.length > 2 && ['de', 'van', 'le', 'du'].includes(parts[parts.length - 2].toLowerCase())) {
+    // detect common multi-part cricket surnames (de villiers, van der dussen, etc)
+    if (parts.length >= 3 && ['de', 'van', 'le', 'du', 'von', 'mac', 'mc', 'da', 'di'].includes(parts[parts.length - 2].toLowerCase())) {
         surnameIdx = parts.length - 2;
+    }
+    if (parts.length >= 4 && parts[parts.length - 3].toLowerCase() === 'van' && ['der', 'den'].includes(parts[parts.length - 2].toLowerCase())) {
+        surnameIdx = parts.length - 3;
     }
     
     const surname = parts.slice(surnameIdx).join(' ').toLowerCase();
-    const givenNames = parts.slice(0, surnameIdx).map(n => n.toLowerCase());
+    const rawGiven = parts.slice(0, surnameIdx).map(n => n.toLowerCase());
+
+    let givenNames = [];
+    rawGiven.forEach(n => {
+        // if wikipedia failed to expand an initial block (like "HD" or "EM"), split it manually
+        if (isUnresolvedAbbrev && n.length <= 3 && !/[aeiouy]/.test(n)) {
+            givenNames.push(...n.split(''));
+        } else {
+            givenNames.push(n);
+        }
+    });
 
     const fullFirsts = givenNames.join(' ');
-    const initials = givenNames.map(n => n[0]).join('');
+    const initials = givenNames.map(n => n[0]).join(''); 
 
     return {
         full: `${fullFirsts} ${surname}`,
@@ -156,40 +168,47 @@ function getNameFormats(trueFullName) {
     };
 }
 
-// pulls the true birth name and the summary block directly from wikipedia
+// aggressively resolves birth names via wikipedia, falling back to fuzzy search if strict fails
 async function resolveFullName(queryName) {
     const strictQuery = encodeURIComponent(`intitle:"${queryName}" cricketer`);
     const fuzzyQuery = encodeURIComponent(`${queryName} cricketer`);
     
+    const fetchWiki = async (q) => {
+        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`);
+        return res.json();
+    };
+
     try {
-        let res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${strictQuery}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`);
-        let data = await res.json();
-        
-        if (!data.query || !data.query.pages) {
-            res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${fuzzyQuery}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`);
-            data = await res.json();
+        let data = await fetchWiki(strictQuery);
+        let pageData = data.query && data.query.pages ? Object.values(data.query.pages)[0] : null;
+
+        // if the strict search hits a disambiguation page or fails, pivot to fuzzy search
+        if (!pageData || pageData.title.includes("(disambiguation)") || !pageData.extract) {
+            data = await fetchWiki(fuzzyQuery);
+            pageData = data.query && data.query.pages ? Object.values(data.query.pages)[0] : null;
         }
 
-        if (data.query && data.query.pages) {
-            const pageId = Object.keys(data.query.pages)[0];
-            const pageData = data.query.pages[pageId];
+        if (pageData && !pageData.title.includes("(disambiguation)")) {
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
             const extract = pageData.extract || "";
 
-            if (!title.includes("(disambiguation)") && extract.toLowerCase().includes("cricket")) {
+            if (extract.toLowerCase().includes("cricket")) {
+                // extract the true birth name from the opening bracket of the biography
                 const firstSentence = extract.split(/[.!?]/)[0];
-                const match = firstSentence.match(/^([a-zA-Z\s\-]+)[(,\,]/);
+                const match = firstSentence.match(/^([a-zA-Z\s\-']+)[(,\,]/);
                 let trueName = match ? match[1].trim().toLowerCase() : title;
                 
                 // safety fallback if the regex grabbed too much text
                 if (trueName.split(' ').length > 5 || trueName.length > 40) trueName = title; 
-                return { resolved: trueName, extract: extract };
+                return { resolved: trueName, extract: extract, isUnresolved: false };
             }
         }
     } catch (e) {
         console.error("wiki fetch error:", e);
     }
-    return { resolved: queryName.toLowerCase(), extract: null };
+    
+    // wikipedia completely failed to resolve the name
+    return { resolved: queryName.toLowerCase(), extract: null, isUnresolved: true };
 }
 
 // 7. turn handlers
@@ -198,37 +217,62 @@ async function computerTurn() {
     playerInput.disabled = true;
     submitBtn.disabled = true;
 
-    // locate all database entries matching the target letter that haven't been burned yet
-    const validCandidates = playersCatalog.filter(p => 
+    let validCandidates = playersCatalog.filter(p => 
         !usedPlayers.has(p.full_name) && 
         !usedPlayers.has(p.unique_name) &&
         (currentLetter === '' || getFirstLetter(p.name) === currentLetter || getFirstLetter(p.unique_name) === currentLetter)
     );
 
-    if (validCandidates.length === 0) {
+    let selected, trueFullName, extract, formats;
+    let foundValid = false;
+
+    // attempt to find a compliant player up to 6 times to satisfy medium/hard mode rules
+    for (let i = 0; i < 6; i++) {
+        if (validCandidates.length === 0) break;
+
+        const randIdx = Math.floor(Math.random() * validCandidates.length);
+        selected = validCandidates.splice(randIdx, 1)[0];
+        
+        const wikiData = await resolveFullName(selected.unique_name || selected.name);
+        trueFullName = wikiData.resolved;
+        extract = wikiData.extract;
+        formats = getNameFormats(trueFullName, wikiData.isUnresolved);
+
+        const firstGiven = formats.givenNames[0] || "";
+        const isLikelyInitial = wikiData.isUnresolved && firstGiven.length <= 2;
+
+        if (currentMode === 'medium' && isLikelyInitial) {
+            // CPU must provide a full first name. if wiki failed to expand an initial, discard candidate.
+            continue; 
+        }
+        
+        if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && firstGiven.length <= 2) {
+            // Hard mode requires full names or full initials. safely discard unresolved single initials.
+            continue; 
+        }
+
+        foundValid = true;
+        break;
+    }
+
+    if (!foundValid) {
         statusBox.textContent = "WIN";
-        setSystemMessage("cpu exhausted database. you win!", false);
+        setSystemMessage("cpu exhausted valid database options. you win!", false);
         return;
     }
 
-    const randIdx = Math.floor(Math.random() * validCandidates.length);
-    const selected = validCandidates.splice(randIdx, 1)[0];
-    
+    // remove from global catalog
     const globalIdx = playersCatalog.indexOf(selected);
     if (globalIdx > -1) playersCatalog.splice(globalIdx, 1);
 
-    const wikiData = await resolveFullName(selected.unique_name || selected.name);
-    const trueFullName = wikiData.resolved;
-    const extract = wikiData.extract;
-
-    // dynamically patch missing full names in firebase for future loads
-    if ((currentMode === 'medium' || currentMode === 'hard') && !selected.full_name && selected.fbKey) {
+    // dynamically patch missing full names in firebase to speed up future lookups
+    if ((currentMode === 'medium' || currentMode === 'hard') && !selected.full_name && selected.fbKey && extract) {
         db.ref('players/' + selected.fbKey).update({ full_name: trueFullName }).catch(e => console.error(e));
     }
 
-    const formats = getNameFormats(trueFullName);
     let playName = selected.name;
 
+    // format the output depending on the mode
     if (currentMode === 'medium') {
         playName = formats.full;
     } else if (currentMode === 'hard') {
@@ -256,6 +300,7 @@ async function handlePlayerTurn() {
     const wikiData = await resolveFullName(inputName);
     const trueFullName = wikiData.resolved;
     const extract = wikiData.extract;
+    const isUnresolved = wikiData.isUnresolved;
 
     if (usedPlayers.has(trueFullName)) {
         setSystemMessage(`invalid: ${trueFullName.toUpperCase()} already used in this game.`);
@@ -265,13 +310,19 @@ async function handlePlayerTurn() {
         return;
     }
 
-    const formats = getNameFormats(trueFullName);
-    const inputParts = inputName.split(' ');
+    const formats = getNameFormats(trueFullName, isUnresolved);
+    const inputParts = inputName.split(/\s+/);
 
-    // enforce strict formatting based on the selected mode
+    // strictly enforce user formatting based on the selected mode
     if (currentMode === 'medium') {
+        if (isUnresolved && inputParts[0].length <= 2) {
+            setSystemMessage(`medium mode: fully correct first name required. we couldn't verify '${inputParts[0]}' as a full name.`);
+            playerInput.disabled = false;
+            submitBtn.disabled = false;
+            return;
+        }
         if (inputParts[0] !== formats.givenNames[0]) {
-            setSystemMessage(`medium mode: fully correct first name required (no initials).`);
+            setSystemMessage(`medium mode: fully correct first name required (e.g. '${formats.givenNames[0].toUpperCase()}').`);
             playerInput.disabled = false;
             submitBtn.disabled = false;
             return;
@@ -283,10 +334,10 @@ async function handlePlayerTurn() {
 
         if (inputCompressed !== fullCompressed && inputCompressed !== initialsCompressed) {
             if (formats.isMulti) {
-                setSystemMessage(`hard mode: require all initials (e.g. '${formats.initials}') or full names (e.g. '${formats.full}').`);
+                setSystemMessage(`hard mode: require all initials (e.g. '${formats.initials.toUpperCase()}') or full names (e.g. '${formats.full.toUpperCase()}').`);
             } else {
                 if (inputParts[0] !== formats.givenNames[0]) {
-                    setSystemMessage(`hard mode: full first name required (e.g. '${formats.full}').`);
+                    setSystemMessage(`hard mode: full first name required (e.g. '${formats.full.toUpperCase()}').`);
                 }
             }
             playerInput.disabled = false;
@@ -295,7 +346,7 @@ async function handlePlayerTurn() {
         }
     }
 
-    // check if the exact identity exists anywhere in the catalog. if not, create it.
+    // check if the exact identity exists anywhere in the catalog. if not, push to firebase.
     let playerIdx = playersCatalog.findIndex(p => p.full_name === trueFullName || p.unique_name === trueFullName || p.name === trueFullName);
     
     if (playerIdx === -1) {
@@ -321,7 +372,7 @@ async function handlePlayerTurn() {
             return;
         }
     } else {
-        // remove the used iteration from the stack so the cpu won't pick it
+        // remove the used iteration from the stack
         playersCatalog.splice(playerIdx, 1);
     }
 
@@ -337,6 +388,7 @@ function executeValidMove(displayName, trueFullName, extract, isPlayer) {
     const div = document.createElement('div');
     div.className = `feed-item ${isPlayer ? 'player' : 'cpu'}`;
     
+    // instantly render the cached wikipedia extract so no double-fetching occurs
     let summaryHtml = `<div class="player-summary">no summary available.</div>`;
     if (extract) {
         const summaryText = extract.split('\n')[0];
@@ -352,7 +404,7 @@ function executeValidMove(displayName, trueFullName, extract, isPlayer) {
     div.innerHTML = `
         <div class="feed-header">
             <div class="feed-meta">${isPlayer ? 'you' : 'cpu'}</div>
-            <div class="feed-name">${displayName}</div>
+            <div class="feed-name">${displayName.toUpperCase()}</div>
         </div>
         <div id="details-${moveCounter}" class="feed-details">
             ${summaryHtml}
