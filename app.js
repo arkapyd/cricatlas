@@ -40,13 +40,29 @@ const messageEl = document.getElementById('message');
 const chainList = document.getElementById('chain-list');
 const scoreEl = document.getElementById('score');
 const modeDisplay = document.getElementById('mode-display');
+const modeHelpText = document.getElementById('mode-help-text');
 
 // 5. event listeners
+const helpTexts = {
+    'easy': '<span>easy:</span> standard name chain rules. initials (e.g. "a sharma") are accepted and dynamically expanded by the engine.',
+    'medium': '<span>medium:</span> strict first names. you must provide the fully correct first name. initials will be rejected.',
+    'hard': '<span>hard:</span> extreme strictness. you must provide either the fully expanded birth name (e.g. "rohit gurunath sharma") or exact initials (e.g. "r g sharma").'
+};
+
 tabs.forEach(tab => {
     tab.addEventListener('click', (e) => {
         tabs.forEach(t => t.classList.remove('active'));
         e.target.classList.add('active');
         currentMode = e.target.getAttribute('data-mode');
+        
+        // update the help text dynamically
+        if (modeHelpText) {
+            modeHelpText.style.opacity = '0';
+            setTimeout(() => {
+                modeHelpText.innerHTML = helpTexts[currentMode];
+                modeHelpText.style.opacity = '1';
+            }, 150);
+        }
     });
 });
 
