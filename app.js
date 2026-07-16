@@ -7,23 +7,21 @@ if ('serviceWorker' in navigator) {
 
 // 2. firebase configuration (replace with your actual config)
 const firebaseConfig = {
-   apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
-   authDomain: "cricatlas.firebaseapp.com",
-   databaseURL: "https://cricatlas-default-rtdb.asia-southeast1.firebasedatabase.app/",
-   projectId: "cricatlas",
-   storageBucket: "cricatlas.firebasestorage.app",
-   messagingSenderId: "858714427166",
-   appId: "1:858714427166:web:deac448d834d22bafa430f",
-   measurementId: "G-ZS4RDHBNMT"
+    apiKey: "YOUR_API_KEY",
+    authDomain: "YOUR_PROJECT_ID.firebaseapp.com",
+    databaseURL: "https://YOUR_PROJECT_ID-default-rtdb.firebaseio.com",
+    projectId: "YOUR_PROJECT_ID",
+    storageBucket: "YOUR_PROJECT_ID.appspot.com",
+    messagingSenderId: "YOUR_SENDER_ID",
+    appId: "YOUR_APP_ID"
 };
 
-// initialize firebase
 firebase.initializeApp(firebaseConfig);
 const db = firebase.database();
 
-// 3. game state
-let playersDb = [];
-let playersMap = {};
+// 3. game state & catalog
+// stores array of objects: { fbKey, name, unique_name, full_name }
+let playersCatalog = []; 
 let usedPlayers = new Set();
 let currentLetter = '';
 let score = 0;
@@ -44,7 +42,6 @@ const scoreEl = document.getElementById('score');
 const modeDisplay = document.getElementById('mode-display');
 
 // 5. event listeners
-// handle mode selection tabs
 tabs.forEach(tab => {
     tab.addEventListener('click', (e) => {
         tabs.forEach(t => t.classList.remove('active'));
@@ -53,7 +50,6 @@ tabs.forEach(tab => {
     });
 });
 
-// handle start button & load firebase data
 startBtn.addEventListener('click', () => {
     welcomeView.style.display = 'none';
     gameView.style.display = 'block';
@@ -68,20 +64,26 @@ startBtn.addEventListener('click', () => {
                 return;
             }
 
+            // safely parse flat arrays or push-key objects and preserve the firebase key for updating
             let rawArray = [];
-            if (data.players) {
-                rawArray = Array.isArray(data.players) ? data.players : Object.values(data.players);
+            let sourceData = data.players ? data.players : data;
+            
+            if (Array.isArray(sourceData)) {
+                sourceData.forEach((p, idx) => { if (p) rawArray.push({...p, fbKey: idx.toString()}); });
             } else {
-                rawArray = Array.isArray(data) ? data : Object.values(data);
+                Object.keys(sourceData).forEach(key => {
+                    if (sourceData[key]) rawArray.push({...sourceData[key], fbKey: key});
+                });
             }
 
-            // populate both the array for game logic, and the map for wiki searches
             rawArray.forEach(player => {
                 if (player && player.name) {
-                    const nameKey = player.name.toLowerCase().trim();
-                    playersDb.push(nameKey);
-                    // store the full name (fallback to short name if missing)
-                    playersMap[nameKey] = player.unique_name || player.name; 
+                    playersCatalog.push({
+                        fbKey: player.fbKey,
+                        name: player.name.toLowerCase().trim(),
+                        unique_name: (player.unique_name || player.name).toLowerCase().trim(),
+                        full_name: (player.full_name || '').toLowerCase().trim()
+                    });
                 }
             });
                 
@@ -98,12 +100,11 @@ playerInput.addEventListener('keypress', (e) => {
     if (e.key === 'Enter') handlePlayerTurn();
 });
 
-// 6. core game functions
+// 6. core game & validation functions
 function startGame() {
     playerInput.disabled = false;
     submitBtn.disabled = false;
     setSystemMessage("engine initialized. cpu will start.", false);
-    
     setTimeout(computerTurn, 600);
 }
 
@@ -112,7 +113,7 @@ function getFirstLetter(name) {
 }
 
 function getLastLetterOfSurname(name) {
-    const parts = name.split(' ');
+    const parts = name.trim().split(' ');
     const surname = parts[parts.length - 1];
     return surname.charAt(surname.length - 1);
 }
@@ -123,28 +124,120 @@ function setSystemMessage(msg, isError = true) {
     setTimeout(() => {
         messageEl.style.color = "var(--text-dim)";
         messageEl.textContent = "awaiting input...";
-    }, 3000);
+    }, 3500);
 }
 
-function computerTurn() {
-    const validPlayers = playersDb.filter(p => 
-        !usedPlayers.has(p) && 
-        (currentLetter === '' || getFirstLetter(p) === currentLetter)
+// parses a full name into pieces to enforce mode rules
+function getNameFormats(trueFullName) {
+    const parts = trueFullName.trim().split(/\s+/);
+    if (parts.length < 2) {
+        const lower = trueFullName.toLowerCase();
+        return { full: lower, initials: lower, givenNames: [lower], isMulti: false };
+    }
+
+    // safely detach surnames with prefixes
+    let surnameIdx = parts.length - 1;
+    if (parts.length > 2 && ['de', 'van', 'le', 'du'].includes(parts[parts.length - 2].toLowerCase())) {
+        surnameIdx = parts.length - 2;
+    }
+    
+    const surname = parts.slice(surnameIdx).join(' ').toLowerCase();
+    const givenNames = parts.slice(0, surnameIdx).map(n => n.toLowerCase());
+
+    const fullFirsts = givenNames.join(' ');
+    const initials = givenNames.map(n => n[0]).join('');
+
+    return {
+        full: `${fullFirsts} ${surname}`,
+        initials: `${initials} ${surname}`,
+        givenNames: givenNames,
+        isMulti: givenNames.length > 1
+    };
+}
+
+// pulls the true birth name and the summary block directly from wikipedia
+async function resolveFullName(queryName) {
+    const strictQuery = encodeURIComponent(`intitle:"${queryName}" cricketer`);
+    const fuzzyQuery = encodeURIComponent(`${queryName} cricketer`);
+    
+    try {
+        let res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${strictQuery}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`);
+        let data = await res.json();
+        
+        if (!data.query || !data.query.pages) {
+            res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${fuzzyQuery}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`);
+            data = await res.json();
+        }
+
+        if (data.query && data.query.pages) {
+            const pageId = Object.keys(data.query.pages)[0];
+            const pageData = data.query.pages[pageId];
+            const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
+            const extract = pageData.extract || "";
+
+            if (!title.includes("(disambiguation)") && extract.toLowerCase().includes("cricket")) {
+                const firstSentence = extract.split(/[.!?]/)[0];
+                const match = firstSentence.match(/^([a-zA-Z\s\-]+)[(,\,]/);
+                let trueName = match ? match[1].trim().toLowerCase() : title;
+                
+                // safety fallback if the regex grabbed too much text
+                if (trueName.split(' ').length > 5 || trueName.length > 40) trueName = title; 
+                return { resolved: trueName, extract: extract };
+            }
+        }
+    } catch (e) {
+        console.error("wiki fetch error:", e);
+    }
+    return { resolved: queryName.toLowerCase(), extract: null };
+}
+
+// 7. turn handlers
+async function computerTurn() {
+    setSystemMessage("cpu is calculating...", false);
+    playerInput.disabled = true;
+    submitBtn.disabled = true;
+
+    // locate all database entries matching the target letter that haven't been burned yet
+    const validCandidates = playersCatalog.filter(p => 
+        !usedPlayers.has(p.full_name) && 
+        !usedPlayers.has(p.unique_name) &&
+        (currentLetter === '' || getFirstLetter(p.name) === currentLetter || getFirstLetter(p.unique_name) === currentLetter)
     );
 
-    if (validPlayers.length === 0) {
+    if (validCandidates.length === 0) {
         statusBox.textContent = "WIN";
         setSystemMessage("cpu exhausted database. you win!", false);
-        playerInput.disabled = true;
-        submitBtn.disabled = true;
         return;
     }
 
-    const randomPlayer = validPlayers[Math.floor(Math.random() * validPlayers.length)];
-    addToChain(randomPlayer, false);
+    const randIdx = Math.floor(Math.random() * validCandidates.length);
+    const selected = validCandidates.splice(randIdx, 1)[0];
+    
+    const globalIdx = playersCatalog.indexOf(selected);
+    if (globalIdx > -1) playersCatalog.splice(globalIdx, 1);
+
+    const wikiData = await resolveFullName(selected.unique_name || selected.name);
+    const trueFullName = wikiData.resolved;
+    const extract = wikiData.extract;
+
+    // dynamically patch missing full names in firebase for future loads
+    if ((currentMode === 'medium' || currentMode === 'hard') && !selected.full_name && selected.fbKey) {
+        db.ref('players/' + selected.fbKey).update({ full_name: trueFullName }).catch(e => console.error(e));
+    }
+
+    const formats = getNameFormats(trueFullName);
+    let playName = selected.name;
+
+    if (currentMode === 'medium') {
+        playName = formats.full;
+    } else if (currentMode === 'hard') {
+        playName = Math.random() > 0.5 ? formats.initials : formats.full;
+    }
+
+    executeValidMove(playName, trueFullName, extract, false);
 }
 
-function handlePlayerTurn() {
+async function handlePlayerTurn() {
     const inputName = playerInput.value.toLowerCase().trim();
     playerInput.value = '';
 
@@ -155,144 +248,126 @@ function handlePlayerTurn() {
         return;
     }
 
-    if (usedPlayers.has(inputName)) {
-        setSystemMessage("invalid: player already used in this chain");
+    setSystemMessage(`analyzing '${inputName}'...`, false);
+    playerInput.disabled = true;
+    submitBtn.disabled = true;
+    
+    const wikiData = await resolveFullName(inputName);
+    const trueFullName = wikiData.resolved;
+    const extract = wikiData.extract;
+
+    if (usedPlayers.has(trueFullName)) {
+        setSystemMessage(`invalid: ${trueFullName.toUpperCase()} already used in this game.`);
+        playerInput.disabled = false;
+        submitBtn.disabled = false;
+        playerInput.focus();
         return;
     }
 
-    if (!playersDb.includes(inputName)) {
-        verifyAndAddPlayer(inputName);
-        return;
+    const formats = getNameFormats(trueFullName);
+    const inputParts = inputName.split(' ');
+
+    // enforce strict formatting based on the selected mode
+    if (currentMode === 'medium') {
+        if (inputParts[0] !== formats.givenNames[0]) {
+            setSystemMessage(`medium mode: fully correct first name required (no initials).`);
+            playerInput.disabled = false;
+            submitBtn.disabled = false;
+            return;
+        }
+    } else if (currentMode === 'hard') {
+        const inputCompressed = inputName.replace(/\s+/g, '');
+        const initialsCompressed = formats.initials.replace(/\s+/g, '');
+        const fullCompressed = formats.full.replace(/\s+/g, '');
+
+        if (inputCompressed !== fullCompressed && inputCompressed !== initialsCompressed) {
+            if (formats.isMulti) {
+                setSystemMessage(`hard mode: require all initials (e.g. '${formats.initials}') or full names (e.g. '${formats.full}').`);
+            } else {
+                if (inputParts[0] !== formats.givenNames[0]) {
+                    setSystemMessage(`hard mode: full first name required (e.g. '${formats.full}').`);
+                }
+            }
+            playerInput.disabled = false;
+            submitBtn.disabled = false;
+            return;
+        }
     }
 
-    executeValidMove(inputName);
+    // check if the exact identity exists anywhere in the catalog. if not, create it.
+    let playerIdx = playersCatalog.findIndex(p => p.full_name === trueFullName || p.unique_name === trueFullName || p.name === trueFullName);
+    
+    if (playerIdx === -1) {
+        if (extract && extract.toLowerCase().includes("cricket")) {
+            const newPlayerObj = {
+                identifier: Math.random().toString(16).slice(2, 10),
+                name: inputName,
+                unique_name: trueFullName,
+                full_name: trueFullName,
+                all_name_variations: ""
+            };
+            try {
+                const ref = await db.ref('players').push(newPlayerObj);
+                newPlayerObj.fbKey = ref.key;
+                setSystemMessage(`verified! '${inputName}' added to global database.`, false);
+            } catch(e) {
+                console.error("firebase write error:", e);
+            }
+        } else {
+            setSystemMessage(`found '${trueFullName}' on wiki, but they don't appear to be a cricketer.`);
+            playerInput.disabled = false;
+            submitBtn.disabled = false;
+            return;
+        }
+    } else {
+        // remove the used iteration from the stack so the cpu won't pick it
+        playersCatalog.splice(playerIdx, 1);
+    }
+
+    executeValidMove(inputName, trueFullName, extract, true);
 }
 
-function executeValidMove(inputName) {
-    addToChain(inputName, true);
-    score++;
-    scoreEl.textContent = score;
-    setTimeout(computerTurn, 800);
-}
-
-// 7. dynamic dom injection & wikipedia fetching
-function addToChain(name, isPlayer) {
-    usedPlayers.add(name);
-    currentLetter = getLastLetterOfSurname(name);
+// 8. rendering
+function executeValidMove(displayName, trueFullName, extract, isPlayer) {
+    usedPlayers.add(trueFullName);
+    currentLetter = getLastLetterOfSurname(displayName);
     moveCounter++;
     
     const div = document.createElement('div');
     div.className = `feed-item ${isPlayer ? 'player' : 'cpu'}`;
     
+    let summaryHtml = `<div class="player-summary">no summary available.</div>`;
+    if (extract) {
+        const summaryText = extract.split('\n')[0];
+        const summaryLower = summaryText.toLowerCase();
+        const isIntl = summaryLower.includes('international') || summaryLower.includes('test match') || summaryLower.includes('odi');
+        const formatBadge = isIntl ? `<span class="badge intl">international</span>` : `<span class="badge">domestic</span>`;
+        summaryHtml = `
+            <div class="player-badges">${formatBadge}</div>
+            <div class="player-summary">${summaryText}</div>
+        `;
+    }
+
     div.innerHTML = `
         <div class="feed-header">
             <div class="feed-meta">${isPlayer ? 'you' : 'cpu'}</div>
-            <div class="feed-name">${name}</div>
+            <div class="feed-name">${displayName}</div>
         </div>
         <div id="details-${moveCounter}" class="feed-details">
-            <div class="player-summary" style="font-style: italic;">fetching data...</div>
+            ${summaryHtml}
         </div>
     `;
     chainList.prepend(div);
-    
     statusBox.textContent = currentLetter.toUpperCase();
-    fetchPlayerDetails(name, `details-${moveCounter}`);
-}
-
-function fetchPlayerDetails(playerName, elementId) {
-    const detailsContainer = document.getElementById(elementId);
-    if (!detailsContainer) return;
-
-    // lookup the full name from our map. if it's not there, just use what was passed in.
-    const fullName = playersMap[playerName.toLowerCase()] || playerName;
     
-    // search using the full unique name instead of the abbreviation
-    const query = encodeURIComponent(`${fullName} cricketer`);
-    const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
-
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (!data.query || !data.query.pages) {
-                detailsContainer.innerHTML = `<div class="player-summary">no wikipedia data found.</div>`;
-                return;
-            }
-
-            const pageId = Object.keys(data.query.pages)[0];
-            const pageData = data.query.pages[pageId];
-            const title = pageData.title;
-            const extract = pageData.extract;
-
-            // NEW: Reject disambiguation pages (these are just lists of people with the same name)
-            if (title.toLowerCase().includes("(disambiguation)") || !extract || extract.trim() === "") {
-                detailsContainer.innerHTML = `<div class="player-summary">no specific cricketer profile found.</div>`;
-                return;
-            }
-
-            // Clean up the text
-            const summaryText = extract.split('\n')[0]; 
-            const summaryLower = summaryText.toLowerCase();
-
-            // Simple check for badges
-            const isIntl = summaryLower.includes('international') || summaryLower.includes('test match') || summaryLower.includes('odi');
-            const formatBadge = isIntl ? `<span class="badge intl">international</span>` : `<span class="badge">domestic</span>`;
-
-            detailsContainer.innerHTML = `
-                <div class="player-badges">
-                    ${formatBadge}
-                </div>
-                <div class="player-summary">${summaryText}</div>
-            `;
-        })
-        .catch(err => {
-            console.error('wikipedia fetch error:', err);
-            detailsContainer.innerHTML = `<div class="player-summary">failed to load data.</div>`;
-        });
-}
-
-function verifyAndAddPlayer(inputName) {
-    setSystemMessage(`verifying '${inputName}' on wikipedia...`, false);
-    
-    const query = encodeURIComponent(`${playerName} cricketer`);
-const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
-    fetch(url)
-        .then(response => response.json())
-        .then(data => {
-            if (!data.query || !data.query.pages) {
-                setSystemMessage("player not found in database or on wikipedia.");
-                return;
-            }
-
-            const pageId = Object.keys(data.query.pages)[0];
-            const extract = data.query.pages[pageId].extract.toLowerCase();
-
-            if (extract.includes("cricketer") || extract.includes("cricket")) {
-                
-                const newPlayerObj = {
-                    identifier: Math.random().toString(16).slice(2, 10),
-                    name: inputName,
-                    unique_name: inputName,
-                    all_name_variations: ""
-                };
-
-                db.ref('players').push(newPlayerObj)
-                    .then(() => {
-                        playersDb.push(inputName);
-                        playersMap[inputName] = inputName;
-                        setSystemMessage(`verified! '${inputName}' added to global database.`, false);
-                        executeValidMove(inputName);
-                    })
-                    .catch(err => {
-                        console.error("firebase write error:", err);
-                        setSystemMessage("verified, but failed to sync to global database.");
-                    });
-                
-            } else {
-                setSystemMessage(`found '${inputName}' on wiki, but they don't appear to be a cricketer.`);
-            }
-        })
-        .catch(err => {
-            console.error("wiki fetch error:", err);
-            setSystemMessage("failed to connect to wikipedia for verification.");
-        });
+    if (isPlayer) {
+        score++;
+        scoreEl.textContent = score;
+        setTimeout(computerTurn, 1000);
+    } else {
+        playerInput.disabled = false;
+        submitBtn.disabled = false;
+        playerInput.focus();
+        setSystemMessage("your turn.", false);
+    }
 }
