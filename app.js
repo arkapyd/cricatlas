@@ -23,6 +23,7 @@ const db = firebase.database();
 
 // 3. game state
 let playersDb = [];
+let playersMap = {};
 let usedPlayers = new Set();
 let currentLetter = '';
 let score = 0;
@@ -67,7 +68,6 @@ startBtn.addEventListener('click', () => {
                 return;
             }
 
-            // bulletproof parsing: handles arrays, objects, and accidental double-nesting
             let rawArray = [];
             if (data.players) {
                 rawArray = Array.isArray(data.players) ? data.players : Object.values(data.players);
@@ -75,10 +75,15 @@ startBtn.addEventListener('click', () => {
                 rawArray = Array.isArray(data) ? data : Object.values(data);
             }
 
-            // safely map, dropping any corrupted rows that don't have a 'name' property
-            playersDb = rawArray
-                .filter(player => player && player.name) 
-                .map(player => player.name.toLowerCase().trim());
+            // populate both the array for game logic, and the map for wiki searches
+            rawArray.forEach(player => {
+                if (player && player.name) {
+                    const nameKey = player.name.toLowerCase().trim();
+                    playersDb.push(nameKey);
+                    // store the full name (fallback to short name if missing)
+                    playersMap[nameKey] = player.unique_name || player.name; 
+                }
+            });
                 
             startGame();
         })
@@ -198,11 +203,12 @@ function fetchPlayerDetails(playerName, elementId) {
     const detailsContainer = document.getElementById(elementId);
     if (!detailsContainer) return;
 
-    // STRONGER CRITERIA: 
-    // 1. intitle:"name" forces the page title to match the player.
-    // 2. "cricketer" ensures we prioritize cricket-related pages.
-    const query = encodeURIComponent(`${playerName} cricketer`);
-const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
+    // lookup the full name from our map. if it's not there, just use what was passed in.
+    const fullName = playersMap[playerName.toLowerCase()] || playerName;
+    
+    // search using the full unique name instead of the abbreviation
+    const query = encodeURIComponent(`${fullName} cricketer`);
+    const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
 
     fetch(url)
         .then(response => response.json())
@@ -272,6 +278,7 @@ const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=jso
                 db.ref('players').push(newPlayerObj)
                     .then(() => {
                         playersDb.push(inputName);
+                        playersMap[inputName] = inputName;
                         setSystemMessage(`verified! '${inputName}' added to global database.`, false);
                         executeValidMove(inputName);
                     })
