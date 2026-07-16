@@ -62,7 +62,7 @@ startBtn.addEventListener('click', () => {
             const data = snapshot.val();
             if (data) {
                 const playersArray = Array.isArray(data) ? data : Object.values(data);
-                playersDb = playersArray.map(player => player.name.toLowerCase().trim());
+                playersDb = data.players.map(player => player.name.toLowerCase().trim());
             }
             startGame();
         })
