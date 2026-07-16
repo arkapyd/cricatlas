@@ -61,10 +61,25 @@ startBtn.addEventListener('click', () => {
     db.ref('players').once('value')
         .then(snapshot => {
             const data = snapshot.val();
-            if (data) {
-                const playersArray = Array.isArray(data) ? data : Object.values(data);
-                playersDb = data.players.map(player => player.name.toLowerCase().trim());
+            
+            if (!data) {
+                setSystemMessage("database is empty. check firebase console.", true);
+                return;
             }
+
+            // bulletproof parsing: handles arrays, objects, and accidental double-nesting
+            let rawArray = [];
+            if (data.players) {
+                rawArray = Array.isArray(data.players) ? data.players : Object.values(data.players);
+            } else {
+                rawArray = Array.isArray(data) ? data : Object.values(data);
+            }
+
+            // safely map, dropping any corrupted rows that don't have a 'name' property
+            playersDb = rawArray
+                .filter(player => player && player.name) 
+                .map(player => player.name.toLowerCase().trim());
+                
             startGame();
         })
         .catch(err => {
