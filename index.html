@@ -4,33 +4,66 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>cricket atlas</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Anton&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
-    <meta name="theme-color" content="#2e7d32">
+    <meta name="theme-color" content="#0a0a0a">
 </head>
 <body>
+
+    <div class="ribbon">
+        <div class="ribbon-left">
+            <div class="ribbon-title">CRICKET <span class="accent">ATLAS</span></div>
+        </div>
+        <div class="ribbon-right">
+            <div id="live_clock" class="num">SCORE: <span id="score">0</span></div>
+        </div>
+    </div>
+
     <div class="container">
-        <header>
-            <h1>cricket atlas</h1>
-            <p class="score">score: <span id="score">0</span></p>
-        </header>
+        <!-- welcome screen -->
+        <div id="welcome-view" class="hero">
+            <div class="hero-left">
+                <div class="eyebrow">// the ultimate name chain</div>
+                <h1 class="hero-title">Welcome to<br><span class="stroke">Cricket</span> Atlas</h1>
+                <p class="hero-sub">name cricketers whose first names start with the last letter of the previous player's surname.</p>
+                
+                <div class="section" style="margin-top: 40px;">
+                    <div class="section-meta" style="margin-bottom: 14px; font-family: 'JetBrains Mono', monospace; color: var(--text-dim); text-transform: uppercase; letter-spacing: 0.1em;">Select Difficulty</div>
+                    <div class="filter-bar" id="difficulty-tabs">
+                        <button class="tab-btn active" data-mode="easy">Easy</button>
+                        <button class="tab-btn" data-mode="medium">Medium</button>
+                        <button class="tab-btn" data-mode="hard">Hard</button>
+                    </div>
+                </div>
 
-        <div class="game-board">
-            <div id="game-status" class="status-box">
-                loading players...
+                <button id="start-btn" style="margin-top: 30px;">Initialize Engine</button>
             </div>
-
-            <div class="input-area">
-                <input type="text" id="player-input" placeholder="e.g., rahul dravid" disabled autocomplete="off">
-                <button id="submit-btn" disabled>play</button>
-            </div>
-            
-            <p id="message" class="message"></p>
         </div>
 
-        <div class="history">
-            <h3>chain</h3>
-            <ul id="chain-list"></ul>
+        <!-- game screen -->
+        <div id="game-view" style="display: none; padding-top: 40px;">
+            <div class="stat-card" style="text-align: center; margin-bottom: 30px;">
+                <div class="stat-label">target letter</div>
+                <div id="game-status" class="stat-value">...</div>
+                <div id="message" class="stat-sub">loading database...</div>
+            </div>
+
+            <div style="display: flex; gap: 10px; margin-bottom: 40px;">
+                <input type="text" id="player-input" placeholder="e.g., rahul dravid" disabled autocomplete="off">
+                <button id="submit-btn" disabled>PLAY</button>
+            </div>
+
+            <div class="section-head">
+                <h2 class="section-title"><span class="num-pre">◆</span>Chain History</h2>
+                <div class="section-meta" id="mode-display">mode: easy</div>
+            </div>
+            
+            <div class="feed" id="chain-list">
+                <!-- moves will populate here -->
+            </div>
         </div>
     </div>
 
