@@ -1,4 +1,5 @@
-[
+{
+  "players":[
     {
         "identifier": "b4a23876",
         "name": "AAA Amsterdam",
@@ -109788,3 +109789,4 @@
         "all_name_variations": ""
     }
 ]
+}
