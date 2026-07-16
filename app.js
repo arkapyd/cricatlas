@@ -156,7 +156,6 @@ function updateLivesDisplay() {
     livesEl.textContent = '♥'.repeat(lives) + '♡'.repeat(3 - lives);
 }
 
-// penalizes the player for a mistake. ends game if lives hit 0.
 function handleMistake(errorMsg) {
     lives--;
     updateLivesDisplay();
@@ -267,7 +266,7 @@ async function computerTurn() {
         (currentLetter === '' || getFirstLetter(p.name) === currentLetter || getFirstLetter(p.unique_name) === currentLetter)
     );
 
-    let selected, trueFullName, extract, formats;
+    let selected, trueFullName, extract, formats, finalPlayName;
     let foundValid = false;
 
     for (let i = 0; i < 25; i++) {
@@ -292,6 +291,21 @@ async function computerTurn() {
         if (currentCategory === 'women' && !demo.isWomen) continue;
         if (currentCategory === 'men' && demo.isWomen) continue;
 
+        // VISUAL CHAIN LOCK: Determine exactly what name the CPU is going to print to the screen
+        let tempPlayName = selected.name;
+        if (currentMode === 'medium') {
+            tempPlayName = formats.full;
+        } else if (currentMode === 'hard') {
+            tempPlayName = Math.random() > 0.5 ? formats.initials : formats.full;
+        }
+
+        // If wikipedia resolved the name differently and changed its starting letter, 
+        // discard it to avoid breaking the visual chain rule on the screen.
+        if (currentLetter !== '' && getFirstLetter(tempPlayName) !== currentLetter) {
+            continue;
+        }
+
+        finalPlayName = tempPlayName;
         foundValid = true;
         break;
     }
@@ -310,14 +324,7 @@ async function computerTurn() {
         db.ref('players/' + selected.fbKey).update({ full_name: trueFullName }).catch(e => console.error(e));
     }
 
-    let playName = selected.name;
-    if (currentMode === 'medium') {
-        playName = formats.full;
-    } else if (currentMode === 'hard') {
-        playName = Math.random() > 0.5 ? formats.initials : formats.full;
-    }
-
-    executeValidMove(playName, trueFullName, extract, false);
+    executeValidMove(finalPlayName, trueFullName, extract, false);
 }
 
 async function handlePlayerTurn() {
@@ -445,7 +452,6 @@ function executeValidMove(displayName, trueFullName, extract, isPlayer) {
     
     chainList.prepend(div);
     
-    // STRICT HISTORY LIMIT: keep only the 2 most recent turns
     while (chainList.children.length > 2) {
         chainList.removeChild(chainList.lastChild);
     }
