@@ -191,33 +191,43 @@ async function resolveFullName(queryName) {
     const fuzzyQuery = encodeURIComponent(`${queryName} cricketer`);
     
     const fetchWiki = async (q) => {
-        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`);
+        // INCREASED: ask for top 5 results instead of just 1 to bypass famous non-cricketers
+        const res = await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=5&prop=extracts&exintro=1&explaintext=1`);
         return res.json();
     };
 
     try {
         let data = await fetchWiki(strictQuery);
-        let pageData = data.query && data.query.pages ? Object.values(data.query.pages)[0] : null;
+        let pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
 
-        if (!pageData || pageData.title.includes("(disambiguation)") || !pageData.extract) {
+        // if the strict search hits nothing, pivot to fuzzy search
+        if (pages.length === 0) {
             data = await fetchWiki(fuzzyQuery);
-            pageData = data.query && data.query.pages ? Object.values(data.query.pages)[0] : null;
+            pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
         }
 
-        if (pageData && !pageData.title.includes("(disambiguation)")) {
+        const queryParts = queryName.trim().split(/\s+/);
+        const surname = queryParts[queryParts.length - 1].toLowerCase();
+
+        // LOOP through the top 5 results to find the actual cricketer
+        for (let pageData of pages) {
+            if (pageData.title.includes("(disambiguation)")) continue;
+
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
             const extract = pageData.extract || "";
-            
-            // NEW: Ensure the wiki title at least shares the player's surname
-            const queryParts = queryName.trim().split(/\s+/);
-            const surname = queryParts[queryParts.length - 1].toLowerCase();
 
-            // Check that the extract contains cricket AND the title contains the surname
-            if (extract.toLowerCase().includes("cricket") && title.includes(surname)) {
+            // normalize accents (e.g. Émile -> emile) to ensure strict surname matching works
+            const normalizedTitle = title.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const normalizedSurname = surname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+            if (extract.toLowerCase().includes("cricket") && normalizedTitle.includes(normalizedSurname)) {
                 const firstSentence = extract.split(/[.!?]/)[0];
-                const match = firstSentence.match(/^([a-zA-Z\s\-']+)[(,\,]/);
+
+                // IMPROVED REGEX: grabs everything before the first bracket or comma, supporting all foreign characters
+                const match = firstSentence.match(/^([^\(\,]+)(?:\(|\,)/);
                 let trueName = match ? match[1].trim().toLowerCase() : title;
                 
+                // safety fallback if the regex grabbed too much text
                 if (trueName.split(' ').length > 5 || trueName.length > 40) trueName = title; 
                 return { resolved: trueName, extract: extract, isUnresolved: false };
             }
@@ -226,7 +236,7 @@ async function resolveFullName(queryName) {
         console.error("wiki fetch error:", e);
     }
     
-    // wiki failed or gave a junk geographical result. return null extract.
+    // wikipedia failed to find a valid cricketer in the top 5 results
     return { resolved: queryName.toLowerCase(), extract: null, isUnresolved: true };
 }
 
