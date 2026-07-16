@@ -1,6 +1,6 @@
 // pwa setup
 if ('serviceWorker' in navigator) {
-    navigator.serviceWorker.register('sw.js')
+    navigator.serviceWorker.register('./sw.js')
         .then(() => console.log('service worker registered'))
         .catch(err => console.log('service worker failed', err));
 }
@@ -10,35 +10,59 @@ let playersDb = [];
 let usedPlayers = new Set();
 let currentLetter = '';
 let score = 0;
+let currentMode = 'easy';
 
 // ui elements
+const welcomeView = document.getElementById('welcome-view');
+const gameView = document.getElementById('game-view');
+const tabs = document.querySelectorAll('.tab-btn');
+const startBtn = document.getElementById('start-btn');
 const statusBox = document.getElementById('game-status');
 const playerInput = document.getElementById('player-input');
 const submitBtn = document.getElementById('submit-btn');
 const messageEl = document.getElementById('message');
 const chainList = document.getElementById('chain-list');
 const scoreEl = document.getElementById('score');
+const modeDisplay = document.getElementById('mode-display');
 
-// load database
-// expects cricket_atlas.json to be an array of strings: ["sachin tendulkar", "virat kohli", ...]
-fetch('cricket_atlas.json')
-    .then(response => response.json())
-    .then(data => {
-        // extract the 'name' string from your specific object structure
-        playersDb = data.map(player => player.name.toLowerCase().trim());
-        startGame();
-    })
-    .catch(err => {
-        statusBox.textContent = "error loading players data.";
-        console.error(err);
+// handle mode selection tabs
+tabs.forEach(tab => {
+    tab.addEventListener('click', (e) => {
+        tabs.forEach(t => t.classList.remove('active'));
+        e.target.classList.add('active');
+        currentMode = e.target.getAttribute('data-mode');
     });
+});
+
+// handle start button
+startBtn.addEventListener('click', () => {
+    welcomeView.style.display = 'none';
+    gameView.style.display = 'block';
+    modeDisplay.textContent = `mode: ${currentMode}`;
+    
+    // load db only when starting
+    fetch('./cricket_atlas.json')
+        .then(response => response.json())
+        .then(data => {
+            // map through the array of objects to pull the name string
+            playersDb = data.map(player => player.name.toLowerCase().trim());
+            startGame();
+        })
+        .catch(err => {
+            messageEl.textContent = "system error: failed to load database.";
+            messageEl.style.color = "var(--loss)";
+            console.error(err);
+        });
+});
 
 function startGame() {
     playerInput.disabled = false;
     submitBtn.disabled = false;
+    messageEl.textContent = "engine initialized. cpu will start.";
+    messageEl.style.color = "var(--text-dim)";
     
     // computer makes the first move
-    computerTurn();
+    setTimeout(computerTurn, 600);
 }
 
 function getFirstLetter(name) {
@@ -51,31 +75,40 @@ function getLastLetterOfSurname(name) {
     return surname.charAt(surname.length - 1);
 }
 
-function addMessage(msg, isError = true) {
-    messageEl.style.color = isError ? '#d32f2f' : '#2e7d32';
-    messageEl.textContent = msg;
-    setTimeout(() => messageEl.textContent = '', 3000);
+function setSystemMessage(msg, isError = true) {
+    messageEl.style.color = isError ? "var(--loss)" : "var(--win)";
+    messageEl.textContent = `// ${msg}`;
+    setTimeout(() => {
+        messageEl.style.color = "var(--text-dim)";
+        messageEl.textContent = "awaiting input...";
+    }, 3000);
 }
 
 function addToChain(name, isPlayer) {
     usedPlayers.add(name);
     currentLetter = getLastLetterOfSurname(name);
     
-    const li = document.createElement('li');
-    li.innerHTML = `<span class="player-type">${isPlayer ? 'you' : 'cpu'}</span> ${name}`;
-    chainList.prepend(li); // add to top of list
+    const div = document.createElement('div');
+    div.className = `feed-item ${isPlayer ? 'player' : 'cpu'}`;
+    div.innerHTML = `
+        <div class="feed-meta">${isPlayer ? 'YOU' : 'CPU'}</div>
+        <div class="feed-name">${name}</div>
+    `;
+    chainList.prepend(div);
     
-    statusBox.innerHTML = `name a player starting with <span>'${currentLetter.toUpperCase()}'</span>`;
+    statusBox.textContent = currentLetter.toUpperCase();
 }
 
 function computerTurn() {
+    // right now logic is shared across all 3 modes as requested
     const validPlayers = playersDb.filter(p => 
         !usedPlayers.has(p) && 
         (currentLetter === '' || getFirstLetter(p) === currentLetter)
     );
 
     if (validPlayers.length === 0) {
-        statusBox.textContent = "cpu ran out of players! you win!";
+        statusBox.textContent = "WIN";
+        setSystemMessage("cpu exhausted database. you win!", false);
         playerInput.disabled = true;
         submitBtn.disabled = true;
         return;
@@ -92,26 +125,24 @@ function handlePlayerTurn() {
     if (!inputName) return;
 
     if (currentLetter !== '' && getFirstLetter(inputName) !== currentLetter) {
-        addMessage(`name must start with '${currentLetter.toUpperCase()}'`);
+        setSystemMessage(`invalid: name must start with '${currentLetter.toUpperCase()}'`);
         return;
     }
 
     if (!playersDb.includes(inputName)) {
-        addMessage("player not found in database.");
+        setSystemMessage("invalid: player not found in database");
         return;
     }
 
     if (usedPlayers.has(inputName)) {
-        addMessage("player already used in this chain.");
+        setSystemMessage("invalid: player already used in this chain");
         return;
     }
 
-    // player move is valid
     addToChain(inputName, true);
     score++;
     scoreEl.textContent = score;
 
-    // trigger cpu turn after a small delay for realism
     setTimeout(computerTurn, 800);
 }
 
