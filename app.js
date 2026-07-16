@@ -9,6 +9,7 @@ if ('serviceWorker' in navigator) {
 const firebaseConfig = {
    apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
    authDomain: "cricatlas.firebaseapp.com",
+   databaseURL: "https://cricatlas-473d0-default-rtdb.firebaseio.com",
    projectId: "cricatlas",
    storageBucket: "cricatlas.firebasestorage.app",
    messagingSenderId: "858714427166",
