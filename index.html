@@ -1,15 +1,39 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
-  <title>cricket atlas</title>
-  <style>
-    body { margin: 0; padding: 0; background-color: #064e3b; overflow: hidden; }
-  </style>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>cricket atlas</title>
+    <link rel="stylesheet" href="styles.css">
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#2e7d32">
 </head>
 <body>
-  <div id="game-container"></div>
-  <script type="module" src="./src/js/main.js"></script>
+    <div class="container">
+        <header>
+            <h1>cricket atlas</h1>
+            <p class="score">score: <span id="score">0</span></p>
+        </header>
+
+        <div class="game-board">
+            <div id="game-status" class="status-box">
+                loading players...
+            </div>
+
+            <div class="input-area">
+                <input type="text" id="player-input" placeholder="e.g., rahul dravid" disabled autocomplete="off">
+                <button id="submit-btn" disabled>play</button>
+            </div>
+            
+            <p id="message" class="message"></p>
+        </div>
+
+        <div class="history">
+            <h3>chain</h3>
+            <ul id="chain-list"></ul>
+        </div>
+    </div>
+
+    <script src="app.js"></script>
 </body>
 </html>
