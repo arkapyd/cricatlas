@@ -198,7 +198,10 @@ function fetchPlayerDetails(playerName, elementId) {
     const detailsContainer = document.getElementById(elementId);
     if (!detailsContainer) return;
 
-    const query = encodeURIComponent(`${playerName} cricket`);
+    // STRONGER CRITERIA: 
+    // 1. intitle:"name" forces the page title to match the player.
+    // 2. "cricketer" ensures we prioritize cricket-related pages.
+    const query = encodeURIComponent(`intitle:"${playerName}" cricketer`);
     const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
 
     fetch(url)
@@ -210,16 +213,21 @@ function fetchPlayerDetails(playerName, elementId) {
             }
 
             const pageId = Object.keys(data.query.pages)[0];
-            const extract = data.query.pages[pageId].extract;
+            const pageData = data.query.pages[pageId];
+            const title = pageData.title;
+            const extract = pageData.extract;
 
-            if (!extract) {
-                detailsContainer.innerHTML = `<div class="player-summary">no summary available.</div>`;
+            // NEW: Reject disambiguation pages (these are just lists of people with the same name)
+            if (title.toLowerCase().includes("(disambiguation)") || !extract || extract.trim() === "") {
+                detailsContainer.innerHTML = `<div class="player-summary">no specific cricketer profile found.</div>`;
                 return;
             }
 
+            // Clean up the text
             const summaryText = extract.split('\n')[0]; 
             const summaryLower = summaryText.toLowerCase();
 
+            // Simple check for badges
             const isIntl = summaryLower.includes('international') || summaryLower.includes('test match') || summaryLower.includes('odi');
             const formatBadge = isIntl ? `<span class="badge intl">international</span>` : `<span class="badge">domestic</span>`;
 
