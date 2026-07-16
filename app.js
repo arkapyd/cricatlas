@@ -385,7 +385,7 @@ async function handlePlayerTurn() {
                 console.error("firebase write error:", e);
             }
         } else {
-            setSystemMessage(`found '${trueFullName}' on wiki, but they don't appear to be a cricketer.`);
+            setSystemMessage(`'${inputName}' is not in the database and could not be verified on wikipedia.`);
             playerInput.disabled = false;
             submitBtn.disabled = false;
             return;
