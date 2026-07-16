@@ -2,7 +2,7 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(err => console.log('service worker failed', err));
 }
 
-// update with your keys, keeping the commas intact
+// update with your keys
 const firebaseConfig = {
   apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
   authDomain: "cricatlas.firebaseapp.com",
@@ -21,6 +21,7 @@ let playersCatalog = [];
 let usedPlayers = new Set();
 let currentLetter = '';
 let score = 0;
+let lives = 3;
 let currentMode = 'easy';
 let currentCategory = 'general';
 let moveCounter = 0;
@@ -37,6 +38,7 @@ const submitBtn = document.getElementById('submit-btn');
 const messageEl = document.getElementById('message');
 const chainList = document.getElementById('chain-list');
 const scoreEl = document.getElementById('score');
+const livesEl = document.getElementById('lives-display');
 const modeDisplay = document.getElementById('mode-display');
 
 const helpTexts = {
@@ -81,6 +83,7 @@ startBtn.addEventListener('click', () => {
     welcomeView.style.display = 'none';
     gameView.style.display = 'block';
     modeDisplay.textContent = `mode: ${currentMode} / ${currentCategory}`;
+    updateLivesDisplay();
     
     db.ref('players').once('value')
         .then(snapshot => {
@@ -142,9 +145,33 @@ function setSystemMessage(msg, isError = true) {
     messageEl.style.color = isError ? "var(--loss)" : "var(--win)";
     messageEl.textContent = `// ${msg}`;
     setTimeout(() => {
-        messageEl.style.color = "var(--text-dim)";
-        messageEl.textContent = "awaiting input...";
+        if (lives > 0) {
+            messageEl.style.color = "var(--text-dim)";
+            messageEl.textContent = "awaiting input...";
+        }
     }, 4500);
+}
+
+function updateLivesDisplay() {
+    livesEl.textContent = '♥'.repeat(lives) + '♡'.repeat(3 - lives);
+}
+
+// penalizes the player for a mistake. ends game if lives hit 0.
+function handleMistake(errorMsg) {
+    lives--;
+    updateLivesDisplay();
+    
+    if (lives <= 0) {
+        statusBox.textContent = "GAME OVER";
+        statusBox.style.color = "var(--loss)";
+        messageEl.style.color = "var(--loss)";
+        messageEl.textContent = `// ${errorMsg} out of lives. cpu wins.`;
+        playerInput.disabled = true;
+        submitBtn.disabled = true;
+    } else {
+        setSystemMessage(`strike! ${errorMsg} (${lives} lives remaining)`, true);
+        resetInput();
+    }
 }
 
 function scanDemographics(extract) {
@@ -243,7 +270,6 @@ async function computerTurn() {
     let selected, trueFullName, extract, formats;
     let foundValid = false;
 
-    // up to 25 attempts to satisfy both difficulty and demographic category rules
     for (let i = 0; i < 25; i++) {
         if (validCandidates.length === 0) break;
 
@@ -255,13 +281,11 @@ async function computerTurn() {
         extract = wikiData.extract;
         formats = getNameFormats(trueFullName, wikiData.isUnresolved);
 
-        // evaluate difficulty limits
         const firstGiven = formats.givenNames[0] || "";
         const isLikelyInitial = wikiData.isUnresolved && firstGiven.length <= 2;
         if (currentMode === 'medium' && isLikelyInitial) continue; 
         if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && firstGiven.length <= 2) continue; 
 
-        // evaluate demographic category limits
         const demo = scanDemographics(extract);
         if (currentCategory === 'intl' && !demo.isIntl) continue;
         if (currentCategory === 'domestic' && demo.isIntl) continue;
@@ -273,8 +297,9 @@ async function computerTurn() {
     }
 
     if (!foundValid) {
-        statusBox.textContent = "WIN";
-        setSystemMessage("cpu exhausted valid options for these rules. you win!", false);
+        statusBox.textContent = "YOU WIN";
+        statusBox.style.color = "var(--win)";
+        setSystemMessage("cpu exhausted valid options. you win!", false);
         return;
     }
 
@@ -300,8 +325,9 @@ async function handlePlayerTurn() {
     playerInput.value = '';
 
     if (!inputName) return;
+    
     if (currentLetter !== '' && getFirstLetter(inputName) !== currentLetter) {
-        setSystemMessage(`invalid: name must start with '${currentLetter.toUpperCase()}'`);
+        handleMistake(`name must start with '${currentLetter.toUpperCase()}'.`);
         return;
     }
 
@@ -315,28 +341,23 @@ async function handlePlayerTurn() {
     const isUnresolved = wikiData.isUnresolved;
 
     if (usedPlayers.has(trueFullName)) {
-        setSystemMessage(`invalid: ${trueFullName.toUpperCase()} already used in this game.`);
-        resetInput();
+        handleMistake(`${trueFullName.toUpperCase()} was already used.`);
         return;
     }
 
     const demo = scanDemographics(extract);
     
     if (currentCategory === 'intl' && !demo.isIntl) {
-        setSystemMessage(`invalid: 'intl only' mode active. player profile indicates domestic only.`);
-        resetInput(); return;
+        handleMistake(`intl only mode active. profile indicates domestic only.`); return;
     }
     if (currentCategory === 'domestic' && demo.isIntl) {
-        setSystemMessage(`invalid: 'domestic only' mode active. player profile indicates international experience.`);
-        resetInput(); return;
+        handleMistake(`domestic only mode active. profile indicates intl experience.`); return;
     }
     if (currentCategory === 'women' && !demo.isWomen) {
-        setSystemMessage(`invalid: 'women only' mode active. player demographic mismatch.`);
-        resetInput(); return;
+        handleMistake(`women only mode active. demographic mismatch.`); return;
     }
     if (currentCategory === 'men' && demo.isWomen) {
-        setSystemMessage(`invalid: 'men only' mode active. player demographic mismatch.`);
-        resetInput(); return;
+        handleMistake(`men only mode active. demographic mismatch.`); return;
     }
 
     const formats = getNameFormats(trueFullName, isUnresolved);
@@ -344,12 +365,10 @@ async function handlePlayerTurn() {
 
     if (currentMode === 'medium') {
         if (isUnresolved && inputParts[0].length <= 2) {
-            setSystemMessage(`medium mode: fully correct first name required. couldn't verify '${inputParts[0]}'.`);
-            resetInput(); return;
+            handleMistake(`medium mode requires full first name. couldn't verify '${inputParts[0]}'.`); return;
         }
         if (inputParts[0] !== formats.givenNames[0]) {
-            setSystemMessage(`medium mode: fully correct first name required (e.g. '${formats.givenNames[0].toUpperCase()}').`);
-            resetInput(); return;
+            handleMistake(`medium mode requires fully correct first name.`); return;
         }
     } else if (currentMode === 'hard') {
         const inputCompressed = inputName.replace(/\s+/g, '');
@@ -357,14 +376,7 @@ async function handlePlayerTurn() {
         const fullCompressed = formats.full.replace(/\s+/g, '');
 
         if (inputCompressed !== fullCompressed && inputCompressed !== initialsCompressed) {
-            if (formats.isMulti) {
-                setSystemMessage(`hard mode: require all initials (e.g. '${formats.initials.toUpperCase()}') or full names.`);
-            } else {
-                if (inputParts[0] !== formats.givenNames[0]) {
-                    setSystemMessage(`hard mode: full first name required.`);
-                }
-            }
-            resetInput(); return;
+            handleMistake(`hard mode requires exact initials or full birth name.`); return;
         }
     }
 
@@ -385,8 +397,7 @@ async function handlePlayerTurn() {
                 setSystemMessage(`verified! '${inputName}' added to global database.`, false);
             } catch(e) { console.error("firebase write error:", e); }
         } else {
-            setSystemMessage(`'${inputName}' is not in the database and could not be verified on wikipedia.`);
-            resetInput(); return;
+            handleMistake(`could not verify '${inputName}' on wikipedia as a cricketer.`); return;
         }
     } else {
         playersCatalog.splice(playerIdx, 1);
@@ -396,9 +407,11 @@ async function handlePlayerTurn() {
 }
 
 function resetInput() {
-    playerInput.disabled = false;
-    submitBtn.disabled = false;
-    playerInput.focus();
+    if (lives > 0) {
+        playerInput.disabled = false;
+        submitBtn.disabled = false;
+        playerInput.focus();
+    }
 }
 
 function executeValidMove(displayName, trueFullName, extract, isPlayer) {
@@ -429,7 +442,14 @@ function executeValidMove(displayName, trueFullName, extract, isPlayer) {
             ${summaryHtml}
         </div>
     `;
+    
     chainList.prepend(div);
+    
+    // STRICT HISTORY LIMIT: keep only the 2 most recent turns
+    while (chainList.children.length > 2) {
+        chainList.removeChild(chainList.lastChild);
+    }
+
     statusBox.textContent = currentLetter.toUpperCase();
     
     if (isPlayer) {
