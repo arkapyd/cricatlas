@@ -69,7 +69,63 @@ body {
     border: 1px solid rgba(var(--accent-rgb),0.3);
     padding: 6px 12px; border-radius: 4px; letter-spacing: .5px;
 }
+/* player details underneath the name */
+.feed-item {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 8px;
+}
 
+.feed-header {
+    display: flex;
+    align-items: center;
+    gap: 14px;
+    width: 100%;
+}
+
+.feed-details {
+    width: 100%;
+    padding-top: 8px;
+    border-top: 1px dashed var(--border-bright);
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+}
+
+.player-badges {
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+}
+
+.badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.65rem;
+    padding: 3px 8px;
+    background: var(--surface-2);
+    border: 1px solid var(--border-bright);
+    border-radius: 3px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+}
+
+.badge.intl {
+    color: var(--accent);
+    border-color: rgba(var(--accent-rgb), 0.4);
+    background: rgba(var(--accent-rgb), 0.1);
+}
+
+.player-summary {
+    font-size: 0.85rem;
+    color: var(--text-dim);
+    line-height: 1.5;
+    /* limits text to 3 lines with an ellipsis */
+    display: -webkit-box;
+    -webkit-line-clamp: 3;
+    -webkit-box-orient: vertical;
+    overflow: hidden;
+}
 /* hero */
 .hero { display: flex; flex-direction: column; justify-content: center; min-height: 50vh; border-bottom: 1px solid var(--border); padding-bottom: 40px; }
 .eyebrow { font-family: 'JetBrains Mono', monospace; font-size: .75rem; letter-spacing: .3em; color: var(--accent); text-transform: uppercase; margin-bottom: 14px; }
