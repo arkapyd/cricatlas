@@ -7,13 +7,13 @@ if ('serviceWorker' in navigator) {
 
 // 2. firebase configuration (replace with your actual config)
 const firebaseConfig = {
-  apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
-  authDomain: "cricatlas.firebaseapp.com",
-  projectId: "cricatlas",
-  storageBucket: "cricatlas.firebasestorage.app",
-  messagingSenderId: "858714427166",
-  appId: "1:858714427166:web:deac448d834d22bafa430f",
-  measurementId: "G-ZS4RDHBNMT"
+   apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
+   authDomain: "cricatlas.firebaseapp.com",
+   projectId: "cricatlas",
+   storageBucket: "cricatlas.firebasestorage.app",
+   messagingSenderId: "858714427166",
+   appId: "1:858714427166:web:deac448d834d22bafa430f",
+   measurementId: "G-ZS4RDHBNMT"
 };
 
 // initialize firebase
