@@ -84,19 +84,82 @@ function setSystemMessage(msg, isError = true) {
     }, 3000);
 }
 
+// generate a unique ID for each row so the async fetch knows where to inject the data
+let moveCounter = 0;
+
 function addToChain(name, isPlayer) {
     usedPlayers.add(name);
     currentLetter = getLastLetterOfSurname(name);
+    moveCounter++;
     
     const div = document.createElement('div');
     div.className = `feed-item ${isPlayer ? 'player' : 'cpu'}`;
+    
+    // structure includes the header (CPU/YOU + Name) and the empty details container
     div.innerHTML = `
-        <div class="feed-meta">${isPlayer ? 'YOU' : 'CPU'}</div>
-        <div class="feed-name">${name}</div>
+        <div class="feed-header">
+            <div class="feed-meta">${isPlayer ? 'YOU' : 'CPU'}</div>
+            <div class="feed-name">${name}</div>
+        </div>
+        <div id="details-${moveCounter}" class="feed-details">
+            <div class="player-summary" style="font-style: italic;">fetching data...</div>
+        </div>
     `;
     chainList.prepend(div);
     
     statusBox.textContent = currentLetter.toUpperCase();
+
+    // trigger the wikipedia fetch
+    fetchPlayerDetails(name, `details-${moveCounter}`);
+}
+
+function fetchPlayerDetails(playerName, elementId) {
+    const detailsContainer = document.getElementById(elementId);
+    if (!detailsContainer) return;
+
+    // use generator=search to find "Name cricketer" to avoid disambiguation pages,
+    // and prop=extracts to get the clean text summary.
+    const query = encodeURIComponent(`${playerName} cricket`);
+    const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
+
+    fetch(url)
+        .then(response => response.json())
+        .then(data => {
+            if (!data.query || !data.query.pages) {
+                detailsContainer.innerHTML = `<div class="player-summary">no wikipedia data found.</div>`;
+                return;
+            }
+
+            // the api returns a dynamic page ID key, so we extract the first (and only) value
+            const pages = data.query.pages;
+            const pageId = Object.keys(pages)[0];
+            const extract = pages[pageId].extract;
+
+            if (!extract) {
+                detailsContainer.innerHTML = `<div class="player-summary">no summary available.</div>`;
+                return;
+            }
+
+            // clean up the text: grab the first sentence or two
+            const summaryText = extract.split('\n')[0]; 
+            const summaryLower = summaryText.toLowerCase();
+
+            // simple heuristic scan for the badges
+            const isIntl = summaryLower.includes('international') || summaryLower.includes('test match') || summaryLower.includes('odi');
+            const formatBadge = isIntl ? `<span class="badge intl">International</span>` : `<span class="badge">Domestic</span>`;
+
+            // inject the badges and the text
+            detailsContainer.innerHTML = `
+                <div class="player-badges">
+                    ${formatBadge}
+                </div>
+                <div class="player-summary">${summaryText}</div>
+            `;
+        })
+        .catch(err => {
+            console.error('Wikipedia fetch error:', err);
+            detailsContainer.innerHTML = `<div class="player-summary">failed to load data.</div>`;
+        });
 }
 
 function computerTurn() {
