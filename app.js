@@ -201,8 +201,8 @@ function fetchPlayerDetails(playerName, elementId) {
     // STRONGER CRITERIA: 
     // 1. intitle:"name" forces the page title to match the player.
     // 2. "cricketer" ensures we prioritize cricket-related pages.
-    const query = encodeURIComponent(`intitle:"${playerName}" cricketer`);
-    const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
+    const query = encodeURIComponent(`${playerName} cricketer`);
+const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
 
     fetch(url)
         .then(response => response.json())
@@ -247,9 +247,8 @@ function fetchPlayerDetails(playerName, elementId) {
 function verifyAndAddPlayer(inputName) {
     setSystemMessage(`verifying '${inputName}' on wikipedia...`, false);
     
-    const query = encodeURIComponent(`${inputName} cricket`);
-    const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
-
+    const query = encodeURIComponent(`${playerName} cricketer`);
+const url = `https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${query}&gsrlimit=1&prop=extracts&exintro=1&explaintext=1`;
     fetch(url)
         .then(response => response.json())
         .then(data => {
