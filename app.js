@@ -199,7 +199,6 @@ async function resolveFullName(queryName) {
         let data = await fetchWiki(strictQuery);
         let pageData = data.query && data.query.pages ? Object.values(data.query.pages)[0] : null;
 
-        // if the strict search hits a disambiguation page or fails, pivot to fuzzy search
         if (!pageData || pageData.title.includes("(disambiguation)") || !pageData.extract) {
             data = await fetchWiki(fuzzyQuery);
             pageData = data.query && data.query.pages ? Object.values(data.query.pages)[0] : null;
@@ -208,14 +207,17 @@ async function resolveFullName(queryName) {
         if (pageData && !pageData.title.includes("(disambiguation)")) {
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
             const extract = pageData.extract || "";
+            
+            // NEW: Ensure the wiki title at least shares the player's surname
+            const queryParts = queryName.trim().split(/\s+/);
+            const surname = queryParts[queryParts.length - 1].toLowerCase();
 
-            if (extract.toLowerCase().includes("cricket")) {
-                // extract the true birth name from the opening bracket of the biography
+            // Check that the extract contains cricket AND the title contains the surname
+            if (extract.toLowerCase().includes("cricket") && title.includes(surname)) {
                 const firstSentence = extract.split(/[.!?]/)[0];
                 const match = firstSentence.match(/^([a-zA-Z\s\-']+)[(,\,]/);
                 let trueName = match ? match[1].trim().toLowerCase() : title;
                 
-                // safety fallback if the regex grabbed too much text
                 if (trueName.split(' ').length > 5 || trueName.length > 40) trueName = title; 
                 return { resolved: trueName, extract: extract, isUnresolved: false };
             }
@@ -224,7 +226,7 @@ async function resolveFullName(queryName) {
         console.error("wiki fetch error:", e);
     }
     
-    // wikipedia completely failed to resolve the name
+    // wiki failed or gave a junk geographical result. return null extract.
     return { resolved: queryName.toLowerCase(), extract: null, isUnresolved: true };
 }
 
