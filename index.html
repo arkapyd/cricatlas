@@ -4,7 +4,6 @@
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
     
-    <!-- force standalone fullscreen mode -->
     <meta name="mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-capable" content="yes">
     <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
@@ -22,7 +21,6 @@
     <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
     <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
     
-    <!-- firebase sdks -->
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-app-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-database-compat.js"></script>
@@ -30,11 +28,31 @@
 <body>
     <div id="app-container">
         
-        <!-- main menu / welcome screen -->
-        <div id="welcome-view" class="view active">
+        <!-- auth screen (mandatory) -->
+        <div id="auth-view" class="view active">
             <div class="hero">
                 <h1>CRICKET ATLAS</h1>
                 <p>the infinite name chain engine.</p>
+            </div>
+            <div class="center-card">
+                <button id="google-login-btn" class="primary-btn">SIGN IN WITH GOOGLE</button>
+                <div class="system-message" style="margin-top: 16px;">// authentication required for career tracking.</div>
+            </div>
+        </div>
+
+        <!-- main menu -->
+        <div id="welcome-view" class="view" style="display: none;">
+            <header class="simple-header">
+                <div class="user-profile">
+                    <span id="player-name-display">player</span>
+                    <span class="badge cp-badge" id="user-cp-display">0.0 CP</span>
+                    <button id="logout-btn" class="text-btn">logout</button>
+                </div>
+            </header>
+
+            <div class="hero" style="padding-top: 40px;">
+                <h1>CRICKET ATLAS</h1>
+                <p>select engine mode.</p>
             </div>
             
             <div class="center-card" id="main-menu">
@@ -65,40 +83,27 @@
                 </div>
 
                 <button id="start-offline-btn" class="primary-btn" style="margin-top: 24px;">START ENGINE</button>
-                <button id="back-to-main-btn" class="text-btn" style="width: 100%; margin-top: 16px;">back to main menu</button>
+                <button id="back-to-main-btn" class="text-btn" style="width: 100%; margin-top: 16px;">back to menu</button>
             </div>
         </div>
 
-        <!-- auth screen (online only) -->
-        <div id="auth-view" class="view" style="display: none;">
-            <div class="hero">
-                <h1>CRICKET ATLAS</h1>
-                <p>multiplayer arena</p>
-            </div>
-            <div class="center-card">
-                <button id="google-login-btn" class="primary-btn">SIGN IN WITH GOOGLE</button>
-                <button id="back-from-auth-btn" class="text-btn" style="width: 100%; margin-top: 16px;">back to main menu</button>
-            </div>
-        </div>
-
-        <!-- lobby screen (online only) -->
+        <!-- lobby screen -->
         <div id="lobby-view" class="view" style="display: none;">
             <header class="simple-header">
                 <div class="user-profile">
-                    <span id="player-name-display">player</span>
-                    <button id="logout-btn" class="text-btn">logout</button>
+                    <span id="lobby-player-name">player</span>
+                    <button id="back-from-lobby-btn" class="text-btn">back</button>
                 </div>
             </header>
-            <div class="center-card">
+            <div class="center-card" style="margin-top: 40px;">
                 <h3>RANKED MATCHMAKING</h3>
                 <p class="mode-desc">mode: easy / general<br>initials allowed. 60-second turn limit.</p>
-                <button id="find-match-btn" class="primary-btn">FIND OPPONENT</button>
-                <button id="back-from-lobby-btn" class="text-btn" style="width: 100%; margin-top: 16px;">back to main menu</button>
+                <button id="find-match-btn" class="primary-btn" style="margin-top: 20px;">FIND OPPONENT</button>
                 <div id="lobby-status" class="system-message" style="margin-top: 16px; text-align: center;"></div>
             </div>
         </div>
 
-        <!-- active game screen (shared) -->
+        <!-- active game screen -->
         <div id="game-view" class="view" style="display: none;">
             <header>
                 <div class="player-stat-block opponent">
@@ -132,9 +137,14 @@
 
             <div class="input-area">
                 <div id="message" class="system-message">// awaiting input...</div>
-                <div class="input-group">
+                
+                <div class="input-group" id="play-input-group">
                     <input type="text" id="player-input" placeholder="enter player name..." autocomplete="off" disabled>
                     <button id="submit-btn" disabled>&gt;</button>
+                </div>
+
+                <div id="game-over-panel" class="hide-element" style="margin-top: 8px;">
+                    <button id="btn-return-main" class="primary-btn" style="background: var(--surface-3); color: var(--text);">RETURN TO MAIN MENU</button>
                 </div>
             </div>
         </div>
