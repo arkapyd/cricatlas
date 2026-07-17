@@ -39,6 +39,9 @@ let gameRef = null;
 let isMyTurn = false;
 let totalUserCP = 0;
 
+// pwa install prompt helper
+let deferredPrompt;
+
 // ui elements
 const authView = document.getElementById('auth-view');
 const welcomeView = document.getElementById('welcome-view');
@@ -53,6 +56,7 @@ const btnOnline = document.getElementById('btn-online');
 const btnBackMain = document.getElementById('back-to-main-btn');
 const btnBackLobby = document.getElementById('back-from-lobby-btn');
 const btnReturnMain = document.getElementById('btn-return-main');
+const installAppBtn = document.getElementById('install-app-btn');
 
 const diffTabs = document.querySelectorAll('.diff-btn');
 const catTabs = document.querySelectorAll('.cat-btn');
@@ -93,11 +97,26 @@ const helpTexts = {
 };
 
 function updateHelpText() {
+    if (!modeHelpText) return;
     modeHelpText.style.opacity = '0';
     setTimeout(() => {
         modeHelpText.innerHTML = `${helpTexts[currentMode]}<br><br>${helpTexts[currentCategory]}`;
         modeHelpText.style.opacity = '1';
     }, 150);
+}
+
+// touch optimization helper to bypass 300ms tap latency
+function bindFastTap(element, callback) {
+    if (!element) return;
+    let touchHandled = false;
+    element.addEventListener('touchstart', (e) => {
+        touchHandled = true;
+        callback(e);
+    }, { passive: true });
+    element.addEventListener('click', (e) => {
+        if (!touchHandled) callback(e);
+        touchHandled = false;
+    });
 }
 
 // 1. AUTHENTICATION (MANDATORY)
@@ -127,6 +146,26 @@ auth.onAuthStateChanged(user => {
 
 loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
 logoutBtn.addEventListener('click', () => auth.signOut());
+
+// custom app install prompt logic
+window.addEventListener('beforeinstallprompt', (e) => {
+    e.preventDefault();
+    deferredPrompt = e;
+    if (installAppBtn) installAppBtn.classList.remove('hide-element');
+});
+
+if (installAppBtn) {
+    installAppBtn.addEventListener('click', async () => {
+        if (deferredPrompt) {
+            deferredPrompt.prompt();
+            const { outcome } = await deferredPrompt.userChoice;
+            if (outcome === 'accepted') {
+                installAppBtn.classList.add('hide-element');
+            }
+            deferredPrompt = null;
+        }
+    });
+}
 
 // 2. MENU NAVIGATION
 btnOffline.addEventListener('click', () => {
@@ -205,7 +244,57 @@ async function awardCP(extract, demo) {
     return earnedCP;
 }
 
-// 4. TIMERS & LIVES
+// 4. STATE PERSISTENCE (AUTO-SAVING OFFLINE MATCHES)
+function saveOfflineState() {
+    if (isMultiplayer || lives <= 0) {
+        localStorage.removeItem('atlas_offline_save');
+        return;
+    }
+    const state = {
+        score,
+        lives,
+        currentLetter,
+        usedPlayers: Array.from(usedPlayers),
+        currentMode,
+        currentCategory,
+        chainHtml: chainList.innerHTML
+    };
+    localStorage.setItem('atlas_offline_save', JSON.stringify(state));
+}
+
+function loadOfflineState() {
+    const saved = localStorage.getItem('atlas_offline_save');
+    if (!saved) return false;
+    
+    try {
+        const state = JSON.parse(saved);
+        score = state.score;
+        lives = state.lives;
+        currentLetter = state.currentLetter;
+        usedPlayers = new Set(state.usedPlayers);
+        currentMode = state.currentMode;
+        currentCategory = state.currentCategory;
+        chainList.innerHTML = state.chainHtml;
+        
+        scoreEl.textContent = score;
+        updateLivesDisplay();
+        statusBox.textContent = currentLetter.toUpperCase();
+        
+        diffTabs.forEach(t => {
+            t.classList.toggle('active', t.getAttribute('data-mode') === currentMode);
+        });
+        catTabs.forEach(t => {
+            t.classList.toggle('active', t.getAttribute('data-category') === currentCategory);
+        });
+        updateHelpText();
+
+        return true;
+    } catch (e) {
+        return false;
+    }
+}
+
+// 5. TIMERS & LIVES
 function startTimer() {
     clearInterval(turnTimer);
     timeLeft = 60;
@@ -234,6 +323,7 @@ function triggerGameOver() {
     stopTimer();
     playInputGroup.classList.add('hide-element');
     gameOverPanel.classList.remove('hide-element');
+    localStorage.removeItem('atlas_offline_save');
 }
 
 async function handleTimeout() {
@@ -263,6 +353,7 @@ async function handleTimeout() {
         } else {
             setSystemMessage(`time's up! lost a life and your turn. cpu will play.`, true);
             playerInput.disabled = true; submitBtn.disabled = true;
+            saveOfflineState();
             setTimeout(computerTurn, 1500);
         }
     }
@@ -272,7 +363,7 @@ function updateLivesDisplay() {
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
 }
 
-// 5. OFFLINE LOGIC
+// 6. OFFLINE LOGIC
 startOfflineBtn.addEventListener('click', () => {
     isMultiplayer = false;
     welcomeView.style.display = 'none';
@@ -282,8 +373,13 @@ startOfflineBtn.addEventListener('click', () => {
     opponentNameEl.textContent = 'CPU';
     opponentLivesEl.classList.add('hide-element');
     
-    lives = 3; score = 0; currentLetter = ''; usedPlayers.clear(); chainList.innerHTML = '';
-    scoreEl.textContent = score; updateLivesDisplay();
+    const loaded = loadOfflineState();
+    
+    if (!loaded) {
+        lives = 3; score = 0; currentLetter = ''; usedPlayers.clear(); chainList.innerHTML = '';
+        scoreEl.textContent = score; updateLivesDisplay();
+    }
+    
     playerInput.value = '';
     
     db.ref('players').once('value').then(snapshot => {
@@ -299,11 +395,19 @@ startOfflineBtn.addEventListener('click', () => {
             full_name: (p.full_name || '').toLowerCase().trim()
         })).filter(p => p.name);
 
-        playerInput.disabled = true; submitBtn.disabled = true;
-        turnIndicator.textContent = `MODE: ${currentMode}`;
-        turnIndicator.style.color = "var(--text)";
-        setSystemMessage("engine initialized. cpu will start.", false);
-        setTimeout(computerTurn, 800);
+        if (!loaded) {
+            playerInput.disabled = true; submitBtn.disabled = true;
+            turnIndicator.textContent = `MODE: ${currentMode}`;
+            turnIndicator.style.color = "var(--text)";
+            setSystemMessage("engine initialized. cpu will start.", false);
+            setTimeout(computerTurn, 800);
+        } else {
+            playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
+            turnIndicator.textContent = "YOUR TURN";
+            turnIndicator.style.color = "var(--win)";
+            setSystemMessage("match restored. your turn.", false);
+            startTimer();
+        }
     });
 });
 
@@ -359,6 +463,7 @@ async function computerTurn() {
     statusBox.textContent = currentLetter.toUpperCase();
     
     renderFeedItem(finalPlayName, extract, false, 0);
+    saveOfflineState();
     
     playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
     turnIndicator.textContent = "YOUR TURN";
@@ -367,7 +472,7 @@ async function computerTurn() {
     startTimer();
 }
 
-// 6. ONLINE LOGIC
+// 7. ONLINE LOGIC
 findMatchBtn.addEventListener('click', () => {
     findMatchBtn.disabled = true; findMatchBtn.textContent = 'SEARCHING...';
     lobbyStatus.textContent = 'looking for an open arena...';
@@ -458,8 +563,8 @@ function renderOnlineState(game, amIP1) {
     currentLetter = game.currentLetter || '';
 }
 
-// 7. SHARED INPUT HANDLER
-submitBtn.addEventListener('click', handleMoveWrapper);
+// 8. SHARED INPUT HANDLER
+bindFastTap(submitBtn, handleMoveWrapper);
 playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleMoveWrapper(); });
 
 async function handleMoveWrapper() {
@@ -523,6 +628,7 @@ async function handleMoveWrapper() {
         statusBox.textContent = currentLetter.toUpperCase();
         score++; scoreEl.textContent = score;
         renderFeedItem(inputName, extract, true, earnedCP);
+        saveOfflineState();
         setTimeout(computerTurn, 1000);
     }
 }
@@ -553,12 +659,13 @@ async function punishLogic(reason) {
         } else {
             setSystemMessage(`strike! ${reason}`, true);
             playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
+            saveOfflineState();
             startTimer(); 
         }
     }
 }
 
-// 8. SHARED HELPERS
+// 9. SHARED HELPERS
 function renderFeedItem(displayName, extract, isMe, cpEarned) {
     const div = document.createElement('div');
     div.className = `feed-item ${isMe ? 'player' : (isMultiplayer ? 'opponent' : 'cpu')}`;
