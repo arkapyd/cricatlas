@@ -58,6 +58,72 @@
             <div class="center-card" id="main-menu">
                 <button id="btn-offline" class="primary-btn" style="margin-bottom: 16px;">PLAY OFFLINE (VS CPU)</button>
                 <button id="btn-online" class="primary-btn">PLAY ONLINE (RANKED)</button>
+                <div class="dashboard-section">
+    <div class="tabs-header">
+        <button class="tab-btn small-tab" data-target="how-to-play-tab">how to play</button>
+        <button class="tab-btn large-tab active" data-target="career-tab">career</button>
+        <button class="tab-btn small-tab" data-target="settings-tab">settings</button>
+    </div>
+
+    <div class="tab-content-container">
+        <!-- how to play tab -->
+        <div id="how-to-play-tab" class="tab-pane hide-element">
+            <div contenteditable="true" class="editable-rules" spellcheck="false">
+                <p><strong>core mechanics:</strong></p>
+                <p>- type a cricketer's name that starts with the last letter of the previous player's name.</p>
+                <p>- you have 60 seconds per turn and 3 lives.</p>
+                <p>- running out of time or making an invalid play costs a life.</p>
+                <p><br><strong>cp (career points):</strong></p>
+                <p>- base cp is awarded for valid answers.</p>
+                <p>- multipliers apply for older players (e.g., pre-2000s or pre-1980s).</p>
+                <p>- higher cp pushes you up the career ranks.</p>
+                <p><br><em>(click to edit these rules anytime)</em></p>
+            </div>
+        </div>
+
+        <!-- career tab -->
+        <div id="career-tab" class="tab-pane active-pane">
+            <div class="career-tracker">
+                <h2 id="career-rank-title">gully cricketer</h2>
+                <div class="cp-display"><span id="career-cp-value">0</span> cp</div>
+                
+                <div class="progress-bar-container">
+                    <div id="career-progress-fill" class="progress-bar-fill"></div>
+                </div>
+                
+                <div class="next-rank-info">
+                    next rank: <span id="next-rank-title">school cricketer</span> 
+                    <span id="cp-remaining-text">(50 cp needed)</span>
+                </div>
+            </div>
+        </div>
+
+        <!-- settings tab -->
+        <div id="settings-tab" class="tab-pane hide-element">
+            <div class="settings-grid">
+                <div class="setting-block">
+                    <p>difficulty</p>
+                    <div class="settings-row">
+                        <button class="diff-btn active" data-mode="easy">easy</button>
+                        <button class="diff-btn" data-mode="medium">med</button>
+                        <button class="diff-btn" data-mode="hard">hard</button>
+                    </div>
+                </div>
+                <div class="setting-block">
+                    <p>category</p>
+                    <div class="settings-row">
+                        <button class="cat-btn active" data-category="general">gen</button>
+                        <button class="cat-btn" data-category="intl">intl</button>
+                        <button class="cat-btn" data-category="domestic">dom</button>
+                        <button class="cat-btn" data-category="men">men</button>
+                        <button class="cat-btn" data-category="women">wmn</button>
+                    </div>
+                </div>
+                <p id="mode-help-text" class="help-text-small">easy: standard chain. initials accepted.<br>general: any verified cricketer.</p>
+            </div>
+        </div>
+    </div>
+</div>
             </div>
 
             <!-- offline config panel -->
