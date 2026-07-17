@@ -16,7 +16,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
-const db = firebase.database();
+ db = firebase.database();
 
 // shared state
 let isMultiplayer = false;
@@ -43,41 +43,41 @@ let totalUserCP = 0;
 let deferredPrompt;
 
 // ui elements
-const authView = document.getElementById('auth-view');
-const welcomeView = document.getElementById('welcome-view');
-const lobbyView = document.getElementById('lobby-view');
-const gameView = document.getElementById('game-view');
+ authView = document.getElementById('auth-view');
+ welcomeView = document.getElementById('welcome-view');
+ lobbyView = document.getElementById('lobby-view');
+ gameView = document.getElementById('game-view');
 
-const mainMenu = document.getElementById('main-menu');
-const offlineSetup = document.getElementById('offline-setup');
+ mainMenu = document.getElementById('main-menu');
+ offlineSetup = document.getElementById('offline-setup');
 
-const btnOffline = document.getElementById('btn-offline');
-const btnOnline = document.getElementById('btn-online');
-const btnBackMain = document.getElementById('back-to-main-btn');
-const btnBackLobby = document.getElementById('back-from-lobby-btn');
-const btnReturnMain = document.getElementById('btn-return-main');
-const installAppBtn = document.getElementById('install-app-btn');
+ btnOffline = document.getElementById('btn-offline');
+ btnOnline = document.getElementById('btn-online');
+ btnBackMain = document.getElementById('back-to-main-btn');
+ btnBackLobby = document.getElementById('back-from-lobby-btn');
+ btnReturnMain = document.getElementById('btn-return-main');
+ installAppBtn = document.getElementById('install-app-btn');
 
 // leave game modal elements
-const leaveGameBtn = document.getElementById('leave-game-btn');
-const leaveConfirmModal = document.getElementById('leave-confirm-modal');
-const leaveYesBtn = document.getElementById('leave-yes-btn');
-const leaveNoBtn = document.getElementById('leave-no-btn');
+ leaveGameBtn = document.getElementById('leave-game-btn');
+ leaveConfirmModal = document.getElementById('leave-confirm-modal');
+ leaveYesBtn = document.getElementById('leave-yes-btn');
+ leaveNoBtn = document.getElementById('leave-no-btn');
 
-const diffTabs = document.querySelectorAll('.diff-btn');
-const catTabs = document.querySelectorAll('.cat-btn');
-const modeHelpText = document.getElementById('mode-help-text');
-const startOfflineBtn = document.getElementById('start-offline-btn');
+ diffTabs = document.querySelectorAll('.diff-btn');
+ catTabs = document.querySelectorAll('.cat-btn');
+ modeHelpText = document.getElementById('mode-help-text');
+ startOfflineBtn = document.getElementById('start-offline-btn');
 
-const loginBtn = document.getElementById('google-login-btn');
-const logoutBtn = document.getElementById('logout-btn');
-const findMatchBtn = document.getElementById('find-match-btn');
-const lobbyStatus = document.getElementById('lobby-status');
-const playerNameDisplay = document.getElementById('player-name-display');
-const lobbyPlayerName = document.getElementById('lobby-player-name');
-const userCpDisplay = document.getElementById('user-cp-display');
+ loginBtn = document.getElementById('google-login-btn');
+ logoutBtn = document.getElementById('logout-btn');
+ findMatchBtn = document.getElementById('find-match-btn');
+ lobbyStatus = document.getElementById('lobby-status');
+ playerNameDisplay = document.getElementById('player-name-display');
+ lobbyPlayerName = document.getElementById('lobby-player-name');
+ userCpDisplay = document.getElementById('user-cp-display');
 
-const opponentNameEl = document.getElementById('opponent-name');
+ opponentNameEl = document.getElementById('opponent-name');
 const opponentLivesEl = document.getElementById('opponent-lives');
 const yourLivesEl = document.getElementById('your-lives');
 const turnIndicator = document.getElementById('turn-indicator');
@@ -390,7 +390,99 @@ async function handleTimeout() {
         }
     }
 }
+// tab switching logic
+const tabBtns = document.querySelectorAll('.tab-btn');
+const tabPanes = document.querySelectorAll('.tab-pane');
 
+tabBtns.forEach(btn => {
+    btn.addEventListener('click', () => {
+        // remove active states
+        tabBtns.forEach(b => b.classList.remove('active'));
+        tabPanes.forEach(p => {
+            p.classList.remove('active-pane');
+            p.classList.add('hide-element');
+        });
+        
+        // add active state to clicked
+        btn.classList.add('active');
+        const targetId = btn.getAttribute('data-target');
+        const targetPane = document.getElementById(targetId);
+        targetPane.classList.remove('hide-element');
+        targetPane.classList.add('active-pane');
+    });
+});
+
+// career progression logic
+const careerTiers = [
+    { name: "gully cricketer", threshold: 0 },
+    { name: "school cricketer", threshold: 50 },
+    { name: "school captain", threshold: 100 },
+    { name: "local club cricketer", threshold: 150 },
+    { name: "local club captain", threshold: 200 },
+    { name: "city cricketer", threshold: 250 },
+    { name: "city captain", threshold: 300 },
+    { name: "district cricketer", threshold: 400 },
+    { name: "district captain", threshold: 500 },
+    { name: "state franchise cricketer", threshold: 600 },
+    { name: "state franchise captain", threshold: 700 },
+    { name: "state team cricketer", threshold: 850 },
+    { name: "state team captain", threshold: 1000 },
+    { name: "zonal team cricketer", threshold: 1150 },
+    { name: "zonal team captain", threshold: 1300 },
+    { name: "national franchise cricketer", threshold: 1500 },
+    { name: "national franchise captain", threshold: 1700 },
+    { name: "international franchise cricketer", threshold: 1900 },
+    { name: "international franchise captain", threshold: 2100 },
+    { name: "national team player", threshold: 2500 },
+    { name: "national team captain", threshold: 2900 }
+];
+
+function updateCareerDisplay(totalCp) {
+    let currentTierIndex = 0;
+    
+    // find current rank
+    for (let i = 0; i < careerTiers.length; i++) {
+        if (totalCp >= careerTiers[i].threshold) {
+            currentTierIndex = i;
+        } else {
+            break;
+        }
+    }
+    
+    const currentTier = careerTiers[currentTierIndex];
+    const nextTier = careerTiers[currentTierIndex + 1];
+    
+    document.getElementById('career-rank-title').textContent = currentTier.name;
+    document.getElementById('career-cp-value').textContent = parseFloat(totalCp).toFixed(1);
+    
+    const fillEl = document.getElementById('career-progress-fill');
+    
+    if (nextTier) {
+        const cpNeeded = nextTier.threshold - totalCp;
+        const tierRange = nextTier.threshold - currentTier.threshold;
+        const cpEarnedInTier = totalCp - currentTier.threshold;
+        const progressPercent = (cpEarnedInTier / tierRange) * 100;
+        
+        fillEl.style.width = `${progressPercent}%`;
+        document.getElementById('next-rank-title').textContent = nextTier.name;
+        document.getElementById('cp-remaining-text').textContent = `(${parseFloat(cpNeeded).toFixed(1)} cp needed)`;
+    } else {
+        // max rank reached
+        fillEl.style.width = '100%';
+        document.getElementById('next-rank-title').textContent = "max rank reached";
+        document.getElementById('cp-remaining-text').textContent = "";
+    }
+}
+
+// wherever your onAuthStateChanged fires and retrieves the user's CP from firebase,
+// call updateCareerDisplay(totalUserCP). for example:
+/*
+db.ref(`users/${user.uid}/cp`).on('value', snap => {
+    totalUserCP = snap.val() || 0;
+    userCpDisplay.textContent = `${parseFloat(totalUserCP).toFixed(1)} CP`;
+    updateCareerDisplay(totalUserCP); // hook it in here
+});
+*/
 function updateLivesDisplay() {
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
 }
