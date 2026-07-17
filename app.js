@@ -58,6 +58,12 @@ const btnBackLobby = document.getElementById('back-from-lobby-btn');
 const btnReturnMain = document.getElementById('btn-return-main');
 const installAppBtn = document.getElementById('install-app-btn');
 
+// leave game modal elements
+const leaveGameBtn = document.getElementById('leave-game-btn');
+const leaveConfirmModal = document.getElementById('leave-confirm-modal');
+const leaveYesBtn = document.getElementById('leave-yes-btn');
+const leaveNoBtn = document.getElementById('leave-no-btn');
+
 const diffTabs = document.querySelectorAll('.diff-btn');
 const catTabs = document.querySelectorAll('.cat-btn');
 const modeHelpText = document.getElementById('mode-help-text');
@@ -105,7 +111,6 @@ function updateHelpText() {
     }, 150);
 }
 
-// touch optimization helper to bypass 300ms tap latency
 function bindFastTap(element, callback) {
     if (!element) return;
     let touchHandled = false;
@@ -119,7 +124,6 @@ function bindFastTap(element, callback) {
     });
 }
 
-// 1. AUTHENTICATION (MANDATORY)
 auth.onAuthStateChanged(user => {
     if (user) {
         currentUser = user;
@@ -147,7 +151,6 @@ auth.onAuthStateChanged(user => {
 loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
 logoutBtn.addEventListener('click', () => auth.signOut());
 
-// custom app install prompt logic
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
     deferredPrompt = e;
@@ -167,7 +170,6 @@ if (installAppBtn) {
     });
 }
 
-// 2. MENU NAVIGATION
 btnOffline.addEventListener('click', () => {
     mainMenu.style.display = 'none';
     offlineSetup.style.display = 'block';
@@ -204,7 +206,39 @@ catTabs.forEach(tab => tab.addEventListener('click', (e) => {
     currentCategory = e.target.getAttribute('data-category'); updateHelpText();
 }));
 
-// 3. CAREER POINTS LOGIC
+// leave game popup logic
+if (leaveGameBtn) {
+    leaveGameBtn.addEventListener('click', () => {
+        leaveConfirmModal.classList.remove('hide-element');
+    });
+}
+
+if (leaveNoBtn) {
+    leaveNoBtn.addEventListener('click', () => {
+        leaveConfirmModal.classList.add('hide-element');
+    });
+}
+
+if (leaveYesBtn) {
+    leaveYesBtn.addEventListener('click', async () => {
+        leaveConfirmModal.classList.add('hide-element');
+        if (isMultiplayer) {
+            const snap = await gameRef.once('value');
+            const game = snap.val();
+            const isP1 = game.p1.uid === currentUser.uid;
+            const oppUid = isP1 ? game.p2.uid : game.p1.uid;
+            await gameRef.update({ status: 'finished', winner: oppUid, [`${isP1 ? 'p1' : 'p2'}/lives`]: 0 });
+        } else {
+            lives = 0;
+            updateLivesDisplay();
+            statusBox.textContent = "FORFEIT";
+            statusBox.style.color = "var(--loss)";
+            setSystemMessage(`you forfeited the game.`, true);
+            triggerGameOver();
+        }
+    });
+}
+
 async function awardCP(extract, demo) {
     if (!currentUser) return 0;
     
@@ -244,7 +278,6 @@ async function awardCP(extract, demo) {
     return earnedCP;
 }
 
-// 4. STATE PERSISTENCE (AUTO-SAVING OFFLINE MATCHES)
 function saveOfflineState() {
     if (isMultiplayer || lives <= 0) {
         localStorage.removeItem('atlas_offline_save');
@@ -294,7 +327,6 @@ function loadOfflineState() {
     }
 }
 
-// 5. TIMERS & LIVES
 function startTimer() {
     clearInterval(turnTimer);
     timeLeft = 60;
@@ -363,7 +395,6 @@ function updateLivesDisplay() {
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
 }
 
-// 6. OFFLINE LOGIC
 startOfflineBtn.addEventListener('click', () => {
     isMultiplayer = false;
     welcomeView.style.display = 'none';
@@ -472,7 +503,6 @@ async function computerTurn() {
     startTimer();
 }
 
-// 7. ONLINE LOGIC
 findMatchBtn.addEventListener('click', () => {
     findMatchBtn.disabled = true; findMatchBtn.textContent = 'SEARCHING...';
     lobbyStatus.textContent = 'looking for an open arena...';
@@ -563,7 +593,6 @@ function renderOnlineState(game, amIP1) {
     currentLetter = game.currentLetter || '';
 }
 
-// 8. SHARED INPUT HANDLER
 bindFastTap(submitBtn, handleMoveWrapper);
 playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleMoveWrapper(); });
 
@@ -599,19 +628,23 @@ async function handleMoveWrapper() {
     const demo = scanDemographics(extract);
 
     if (!isMultiplayer) {
-        if (currentCategory === 'intl' && !demo.isIntl) { punishLogic(`requires intl experience.`); return; }
-        if (currentCategory === 'domestic' && demo.isIntl) { punishLogic(`domestic only.`); return; }
-        if (currentCategory === 'women' && !demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
-        if (currentCategory === 'men' && demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
+        if (currentCategory !== 'general') {
+            if (currentCategory === 'intl' && !demo.isIntl) { punishLogic(`requires intl experience.`); return; }
+            if (currentCategory === 'domestic' && demo.isIntl) { punishLogic(`domestic only.`); return; }
+            if (currentCategory === 'women' && !demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
+            if (currentCategory === 'men' && demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
+        }
 
         const formats = getNameFormats(trueFullName, wikiData.isUnresolved);
         const inputParts = inputName.split(/\s+/);
 
         if (currentMode === 'medium') {
             if (wikiData.isUnresolved && inputParts[0].length <= 2) { punishLogic(`full first name required.`); return; }
-            if (inputParts[0] !== formats.givenNames[0]) { punishLogic(`fully correct first name required.`); return; }
+            if (inputParts[0].toLowerCase() !== formats.givenNames[0].toLowerCase()) { punishLogic(`fully correct first name required.`); return; }
         } else if (currentMode === 'hard') {
-            const iC = inputName.replace(/\s+/g, ''), inC = formats.initials.replace(/\s+/g, ''), fC = formats.full.replace(/\s+/g, '');
+            const iC = inputName.toLowerCase().replace(/\s+/g, '');
+            const inC = formats.initials.toLowerCase().replace(/\s+/g, '');
+            const fC = formats.full.toLowerCase().replace(/\s+/g, '');
             if (iC !== fC && iC !== inC) { punishLogic(`exact initials or full birth name required.`); return; }
         }
     }
@@ -665,16 +698,16 @@ async function punishLogic(reason) {
     }
 }
 
-// 9. SHARED HELPERS
 function renderFeedItem(displayName, extract, isMe, cpEarned) {
     const div = document.createElement('div');
     div.className = `feed-item ${isMe ? 'player' : (isMultiplayer ? 'opponent' : 'cpu')}`;
     
+    const demo = scanDemographics(extract);
     let summaryHtml = `<div class="player-summary">no summary available.</div>`;
+    
     if (extract) {
         const summaryText = extract.split('\n')[0];
-        const isIntl = summaryText.toLowerCase().includes('international') || summaryText.toLowerCase().includes('test match');
-        summaryHtml = `<div class="player-badges">${isIntl ? '<span class="badge intl">intl</span>' : '<span class="badge">domestic</span>'}</div><div class="player-summary">${summaryText}</div>`;
+        summaryHtml = `<div class="player-badges">${demo.isIntl ? '<span class="badge intl">intl</span>' : '<span class="badge">domestic</span>'}</div><div class="player-summary">${summaryText}</div>`;
     }
     
     let cpText = isMe && cpEarned > 0 ? `<div class="feed-earned-cp">+${cpEarned} CP</div>` : `<div></div>`;
@@ -702,7 +735,20 @@ function getLastLetterOfSurname(name) {
 function scanDemographics(extract) {
     if (!extract) return { isIntl: false, isWomen: false, isMen: false };
     const l = extract.toLowerCase();
-    return { isIntl: l.includes('international') || l.includes('test match') || l.includes('odi') || l.includes('t20i'), isWomen: /\b(she|her)\b/i.test(l) || l.includes("women's"), isMen: /\b(he|his)\b/i.test(l) || l.includes("men's") };
+    
+    // broadened the keywords to catch players like wasim jaffer who are missing the word 'international'
+    const isIntl = l.includes('international') || 
+                   l.includes('test match') || 
+                   l.includes('test cricketer') ||
+                   l.includes('odi') || 
+                   l.includes('t20i') || 
+                   l.includes('national team') ||
+                   l.includes('cricket team'); 
+                   
+    const isWomen = /\b(she|her)\b/i.test(l) || l.includes("women's");
+    const isMen = /\b(he|his)\b/i.test(l) || l.includes("men's");
+    
+    return { isIntl, isWomen, isMen };
 }
 
 function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
@@ -713,9 +759,22 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     if (parts.length >= 3 && ['de', 'van', 'le', 'du', 'von', 'mac', 'mc', 'da', 'di'].includes(parts[parts.length - 2].toLowerCase())) sIdx = parts.length - 2;
     if (parts.length >= 4 && parts[parts.length - 3].toLowerCase() === 'van' && ['der', 'den'].includes(parts[parts.length - 2].toLowerCase())) sIdx = parts.length - 3;
     
-    const surname = parts.slice(sIdx).join(' ').toLowerCase(), rawGiven = parts.slice(0, sIdx).map(n => n.toLowerCase()), givenNames = [];
-    rawGiven.forEach(n => { if (isUnresolvedAbbrev && n.length <= 3 && !/[aeiouy]/.test(n)) givenNames.push(...n.split('')); else givenNames.push(n); });
-    return { full: `${givenNames.join(' ')} ${surname}`, initials: `${givenNames.map(n => n[0]).join('')} ${surname}`, givenNames, isMulti: givenNames.length > 1 };
+    const surname = parts.slice(sIdx).join(' ').toLowerCase();
+    const rawGiven = parts.slice(0, sIdx).map(n => n.toLowerCase());
+    const givenNames = [];
+    
+    rawGiven.forEach(n => { 
+        if (isUnresolvedAbbrev && n.length <= 3 && !/[aeiouy]/.test(n)) {
+            givenNames.push(...n.split('')); 
+        } else {
+            givenNames.push(n);
+        }
+    });
+    
+    const full = `${givenNames.join(' ')} ${surname}`;
+    const initials = `${givenNames.map(n => n[0]).join('')} ${surname}`;
+    
+    return { full, initials, givenNames, isMulti: givenNames.length > 1 };
 }
 
 async function resolveFullName(queryName) {
