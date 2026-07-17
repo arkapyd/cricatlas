@@ -18,6 +18,9 @@
     
     <link rel="stylesheet" href="styles.css">
     <link rel="manifest" href="manifest.json">
+    <link rel="apple-touch-icon" href="apple-touch-icon.png">
+    <link rel="icon" type="image/png" sizes="192x192" href="icon-192.png">
+    <link rel="icon" type="image/png" sizes="512x512" href="icon-512.png">
     
     <!-- firebase sdks -->
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-app-compat.js"></script>
@@ -88,7 +91,7 @@
             </header>
             <div class="center-card">
                 <h3>RANKED MATCHMAKING</h3>
-                <p class="mode-desc">mode: easy / general<br>initials allowed. any verified cricketer.</p>
+                <p class="mode-desc">mode: easy / general<br>initials allowed. 60-second turn limit.</p>
                 <button id="find-match-btn" class="primary-btn">FIND OPPONENT</button>
                 <button id="back-from-lobby-btn" class="text-btn" style="width: 100%; margin-top: 16px;">back to main menu</button>
                 <div id="lobby-status" class="system-message" style="margin-top: 16px; text-align: center;"></div>
@@ -102,7 +105,10 @@
                     <span class="stat-name" id="opponent-name">OPPONENT</span>
                     <span class="lives-value" id="opponent-lives" style="display: none;">♥♥♥</span>
                 </div>
-                <div class="vs-badge">VS</div>
+                <div class="center-stats">
+                    <div class="vs-badge">VS</div>
+                    <div class="chain-badge">CHAIN: <span id="score">0</span></div>
+                </div>
                 <div class="player-stat-block you">
                     <span class="stat-name">YOU</span>
                     <span class="lives-value" id="your-lives">♥♥♥</span>
@@ -110,8 +116,16 @@
             </header>
 
             <div class="status-panel">
-                <div class="status-label" id="turn-indicator">engine active</div>
-                <div id="game-status" class="status-letter">...</div>
+                <div class="status-split">
+                    <div style="text-align: left;">
+                        <div class="status-label" id="turn-indicator">engine active</div>
+                        <div id="game-status" class="status-letter">...</div>
+                    </div>
+                    <div style="text-align: right;">
+                        <div class="status-label">TIMER</div>
+                        <div id="timer-display" class="status-letter">--</div>
+                    </div>
+                </div>
             </div>
 
             <div id="chain-list" class="feed-container"></div>
