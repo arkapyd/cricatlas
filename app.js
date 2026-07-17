@@ -134,6 +134,7 @@ auth.onAuthStateChanged(user => {
         db.ref(`users/${user.uid}/cp`).on('value', snap => {
             totalUserCP = snap.val() || 0;
             userCpDisplay.textContent = `${parseFloat(totalUserCP).toFixed(1)} CP`;
+            updateCareerDisplay(totalUserCP);
         });
 
         authView.style.display = 'none';
