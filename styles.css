@@ -79,7 +79,7 @@ h1, h2, h3, .status-letter {
 }
 
 .tab-btn {
-    background: var(--bg-alt); /* use your existing background var */
+    background: var(--bg-alt);
     color: var(--text-dim);
     border: 1px solid var(--border);
     border-bottom: none;
@@ -105,7 +105,7 @@ h1, h2, h3, .status-letter {
 
 .tab-btn.active {
     background: var(--bg);
-    color: var(--accent); /* use your gold/yellow var */
+    color: var(--accent);
     border-color: var(--accent);
 }
 
@@ -126,7 +126,6 @@ h1, h2, h3, .status-letter {
     display: block;
 }
 
-/* editable how-to-play */
 .editable-rules {
     font-size: 0.9rem;
     color: var(--text);
@@ -141,7 +140,6 @@ h1, h2, h3, .status-letter {
     border-radius: 4px;
 }
 
-/* career tab */
 .career-tracker {
     text-align: center;
 }
@@ -179,7 +177,6 @@ h1, h2, h3, .status-letter {
     font-weight: bold;
 }
 
-/* settings tab */
 .settings-grid {
     display: flex;
     flex-direction: column;
@@ -312,3 +309,71 @@ header {
 .input-group button:hover:not(:disabled) { background: var(--accent); color: #000; }
 .input-group button:disabled { opacity: 0.5; cursor: not-allowed; }
 .hide-element { display: none !important; }
+
+.private-room-container {
+    margin-top: 20px;
+    padding-top: 20px;
+    border-top: 1px dashed var(--border);
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+}
+
+.private-inputs {
+    display: flex;
+    gap: 8px;
+}
+
+.private-inputs input {
+    flex: 1;
+    background: var(--surface-2);
+    border: 1px solid var(--border-bright);
+    color: var(--text);
+    padding: 10px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.9rem;
+    text-align: center;
+    outline: none;
+}
+
+.private-inputs input:focus {
+    border-color: var(--accent);
+}
+
+.secondary-btn {
+    background: var(--surface-2);
+    border: 1px solid var(--border-bright);
+    color: var(--text);
+    padding: 10px 14px;
+    border-radius: 4px;
+    cursor: pointer;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 0.85rem;
+    text-transform: uppercase;
+    transition: all 0.2s;
+}
+
+.secondary-btn:hover:not(:disabled) {
+    background: rgba(var(--accent-rgb), 0.1);
+    border-color: var(--accent);
+    color: var(--accent);
+}
+
+.room-code-badge {
+    background: rgba(var(--accent-rgb), 0.1);
+    border: 1px solid var(--accent);
+    padding: 12px;
+    border-radius: 4px;
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 1rem;
+    color: var(--text-dim);
+    margin-top: 8px;
+}
+
+.room-code-badge span {
+    color: var(--accent);
+    font-weight: bold;
+    font-size: 1.3rem;
+    letter-spacing: 2px;
+}
