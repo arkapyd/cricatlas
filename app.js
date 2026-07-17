@@ -24,7 +24,6 @@ let currentLetter = '';
 let usedPlayers = new Set();
 let lives = 3;
 let score = 0;
-let moveCounter = 0;
 let turnTimer = null;
 let timeLeft = 60;
 
@@ -33,25 +32,27 @@ let playersCatalog = [];
 let currentMode = 'easy';
 let currentCategory = 'general';
 
-// online state
+// online / auth state
 let currentUser = null;
 let currentGameId = null;
 let gameRef = null;
 let isMyTurn = false;
+let totalUserCP = 0;
 
 // ui elements
-const welcomeView = document.getElementById('welcome-view');
-const mainMenu = document.getElementById('main-menu');
-const offlineSetup = document.getElementById('offline-setup');
 const authView = document.getElementById('auth-view');
+const welcomeView = document.getElementById('welcome-view');
 const lobbyView = document.getElementById('lobby-view');
 const gameView = document.getElementById('game-view');
+
+const mainMenu = document.getElementById('main-menu');
+const offlineSetup = document.getElementById('offline-setup');
 
 const btnOffline = document.getElementById('btn-offline');
 const btnOnline = document.getElementById('btn-online');
 const btnBackMain = document.getElementById('back-to-main-btn');
-const btnBackAuth = document.getElementById('back-from-auth-btn');
 const btnBackLobby = document.getElementById('back-from-lobby-btn');
+const btnReturnMain = document.getElementById('btn-return-main');
 
 const diffTabs = document.querySelectorAll('.diff-btn');
 const catTabs = document.querySelectorAll('.cat-btn');
@@ -63,6 +64,8 @@ const logoutBtn = document.getElementById('logout-btn');
 const findMatchBtn = document.getElementById('find-match-btn');
 const lobbyStatus = document.getElementById('lobby-status');
 const playerNameDisplay = document.getElementById('player-name-display');
+const lobbyPlayerName = document.getElementById('lobby-player-name');
+const userCpDisplay = document.getElementById('user-cp-display');
 
 const opponentNameEl = document.getElementById('opponent-name');
 const opponentLivesEl = document.getElementById('opponent-lives');
@@ -70,6 +73,8 @@ const yourLivesEl = document.getElementById('your-lives');
 const turnIndicator = document.getElementById('turn-indicator');
 const statusBox = document.getElementById('game-status');
 const timerDisplay = document.getElementById('timer-display');
+const playInputGroup = document.getElementById('play-input-group');
+const gameOverPanel = document.getElementById('game-over-panel');
 const playerInput = document.getElementById('player-input');
 const submitBtn = document.getElementById('submit-btn');
 const messageEl = document.getElementById('message');
@@ -95,7 +100,35 @@ function updateHelpText() {
     }, 150);
 }
 
-// 1. MENU NAVIGATION
+// 1. AUTHENTICATION (MANDATORY)
+auth.onAuthStateChanged(user => {
+    if (user) {
+        currentUser = user;
+        const firstName = user.displayName.split(' ')[0];
+        playerNameDisplay.textContent = firstName;
+        lobbyPlayerName.textContent = firstName;
+        
+        db.ref(`users/${user.uid}/cp`).on('value', snap => {
+            totalUserCP = snap.val() || 0;
+            userCpDisplay.textContent = `${parseFloat(totalUserCP).toFixed(1)} CP`;
+        });
+
+        authView.style.display = 'none';
+        welcomeView.style.display = 'block';
+    } else {
+        currentUser = null;
+        welcomeView.style.display = 'none';
+        lobbyView.style.display = 'none';
+        gameView.style.display = 'none';
+        authView.style.display = 'flex';
+        if (gameRef) gameRef.off();
+    }
+});
+
+loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
+logoutBtn.addEventListener('click', () => auth.signOut());
+
+// 2. MENU NAVIGATION
 btnOffline.addEventListener('click', () => {
     mainMenu.style.display = 'none';
     offlineSetup.style.display = 'block';
@@ -104,21 +137,23 @@ btnOffline.addEventListener('click', () => {
 btnOnline.addEventListener('click', () => {
     isMultiplayer = true;
     welcomeView.style.display = 'none';
-    if (currentUser) lobbyView.style.display = 'flex';
-    else authView.style.display = 'flex';
+    lobbyView.style.display = 'flex';
 });
 
-[btnBackMain, btnBackAuth, btnBackLobby].forEach(btn => {
-    btn.addEventListener('click', () => {
-        isMultiplayer = false;
-        authView.style.display = 'none';
-        lobbyView.style.display = 'none';
-        offlineSetup.style.display = 'none';
-        welcomeView.style.display = 'flex';
-        mainMenu.style.display = 'block';
-        if (gameRef) gameRef.off();
-    });
-});
+function returnToMainMenu() {
+    isMultiplayer = false;
+    lobbyView.style.display = 'none';
+    gameView.style.display = 'none';
+    offlineSetup.style.display = 'none';
+    welcomeView.style.display = 'block';
+    mainMenu.style.display = 'block';
+    stopTimer();
+    if (gameRef) gameRef.off();
+}
+
+btnBackMain.addEventListener('click', returnToMainMenu);
+btnBackLobby.addEventListener('click', returnToMainMenu);
+btnReturnMain.addEventListener('click', returnToMainMenu);
 
 diffTabs.forEach(tab => tab.addEventListener('click', (e) => {
     diffTabs.forEach(t => t.classList.remove('active')); e.target.classList.add('active');
@@ -130,7 +165,47 @@ catTabs.forEach(tab => tab.addEventListener('click', (e) => {
     currentCategory = e.target.getAttribute('data-category'); updateHelpText();
 }));
 
-// 2. TIMERS & LIVES
+// 3. CAREER POINTS LOGIC
+async function awardCP(extract, demo) {
+    if (!currentUser) return 0;
+    
+    let baseCp = 1;
+    if (!demo.isIntl) {
+        baseCp = demo.isWomen ? 4 : 3;
+    }
+
+    let activeStart = 2024;
+    const yearRegex = /\b(18\d{2}|19\d{2}|20\d{2})\b/g;
+    const years = [];
+    let match;
+    while ((match = yearRegex.exec(extract)) !== null) {
+        years.push(parseInt(match[1]));
+    }
+
+    if (years.length > 0) {
+        const bornMatch = extract.match(/born\s+(\d{1,2}\s+[a-z]+\s+)?(18\d{2}|19\d{2}|20\d{2})/i);
+        let birthYear = bornMatch ? parseInt(bornMatch[2]) : null;
+        let careerYears = years.filter(y => y !== birthYear && y > (birthYear || 0));
+        
+        if (careerYears.length > 0) activeStart = Math.min(...careerYears);
+        else if (birthYear) activeStart = birthYear + 20;
+        else activeStart = Math.min(...years);
+    }
+
+    let multiplier = 1;
+    if (activeStart < 1980) multiplier = 1.5;
+    else if (activeStart < 2000) multiplier = 1.3;
+    else if (activeStart <= 2010) multiplier = 1.1;
+
+    const earnedCP = parseFloat((baseCp * multiplier).toFixed(1));
+    
+    const ref = db.ref(`users/${currentUser.uid}/cp`);
+    await ref.transaction(currentVal => (currentVal || 0) + earnedCP);
+    
+    return earnedCP;
+}
+
+// 4. TIMERS & LIVES
 function startTimer() {
     clearInterval(turnTimer);
     timeLeft = 60;
@@ -153,6 +228,12 @@ function stopTimer() {
     clearInterval(turnTimer);
     timerDisplay.textContent = '--';
     timerDisplay.classList.remove('timer-danger');
+}
+
+function triggerGameOver() {
+    stopTimer();
+    playInputGroup.classList.add('hide-element');
+    gameOverPanel.classList.remove('hide-element');
 }
 
 async function handleTimeout() {
@@ -178,7 +259,7 @@ async function handleTimeout() {
             statusBox.textContent = "OVER";
             statusBox.style.color = "var(--loss)";
             setSystemMessage(`time's up! out of lives. cpu wins.`, true);
-            playerInput.disabled = true; submitBtn.disabled = true;
+            triggerGameOver();
         } else {
             setSystemMessage(`time's up! lost a life and your turn. cpu will play.`, true);
             playerInput.disabled = true; submitBtn.disabled = true;
@@ -191,16 +272,19 @@ function updateLivesDisplay() {
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
 }
 
-// 3. OFFLINE LOGIC
+// 5. OFFLINE LOGIC
 startOfflineBtn.addEventListener('click', () => {
     isMultiplayer = false;
     welcomeView.style.display = 'none';
     gameView.style.display = 'flex';
+    playInputGroup.classList.remove('hide-element');
+    gameOverPanel.classList.add('hide-element');
     opponentNameEl.textContent = 'CPU';
     opponentLivesEl.classList.add('hide-element');
     
     lives = 3; score = 0; currentLetter = ''; usedPlayers.clear(); chainList.innerHTML = '';
     scoreEl.textContent = score; updateLivesDisplay();
+    playerInput.value = '';
     
     db.ref('players').once('value').then(snapshot => {
         const data = snapshot.val();
@@ -216,7 +300,7 @@ startOfflineBtn.addEventListener('click', () => {
         })).filter(p => p.name);
 
         playerInput.disabled = true; submitBtn.disabled = true;
-        turnIndicator.textContent = `MODE: ${currentMode} / ${currentCategory}`;
+        turnIndicator.textContent = `MODE: ${currentMode}`;
         turnIndicator.style.color = "var(--text)";
         setSystemMessage("engine initialized. cpu will start.", false);
         setTimeout(computerTurn, 800);
@@ -266,6 +350,7 @@ async function computerTurn() {
         statusBox.textContent = "WIN";
         statusBox.style.color = "var(--win)";
         setSystemMessage("cpu exhausted options. you win!", false);
+        triggerGameOver();
         return;
     }
 
@@ -273,7 +358,7 @@ async function computerTurn() {
     currentLetter = getLastLetterOfSurname(finalPlayName);
     statusBox.textContent = currentLetter.toUpperCase();
     
-    renderFeedItem(finalPlayName, extract, false);
+    renderFeedItem(finalPlayName, extract, false, 0);
     
     playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
     turnIndicator.textContent = "YOUR TURN";
@@ -282,23 +367,7 @@ async function computerTurn() {
     startTimer();
 }
 
-// 4. ONLINE / FIREBASE LOGIC
-auth.onAuthStateChanged(user => {
-    if (user) {
-        currentUser = user;
-        playerNameDisplay.textContent = user.displayName.split(' ')[0];
-        if (isMultiplayer && authView.style.display !== 'none') {
-            authView.style.display = 'none'; lobbyView.style.display = 'flex';
-        }
-    } else {
-        currentUser = null;
-        if (isMultiplayer) { lobbyView.style.display = 'none'; gameView.style.display = 'none'; authView.style.display = 'flex'; }
-    }
-});
-
-loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
-logoutBtn.addEventListener('click', () => auth.signOut());
-
+// 6. ONLINE LOGIC
 findMatchBtn.addEventListener('click', () => {
     findMatchBtn.disabled = true; findMatchBtn.textContent = 'SEARCHING...';
     lobbyStatus.textContent = 'looking for an open arena...';
@@ -323,7 +392,12 @@ findMatchBtn.addEventListener('click', () => {
 });
 
 function initOnlineEngine(gameId, initialData) {
-    lobbyView.style.display = 'none'; gameView.style.display = 'flex'; chainList.innerHTML = '';
+    lobbyView.style.display = 'none'; 
+    gameView.style.display = 'flex'; 
+    chainList.innerHTML = '';
+    playInputGroup.classList.remove('hide-element');
+    gameOverPanel.classList.add('hide-element');
+    playerInput.value = '';
     
     const isP1 = initialData.p1.uid === currentUser.uid;
     const opponent = isP1 ? initialData.p2 : initialData.p1;
@@ -338,7 +412,7 @@ function initOnlineEngine(gameId, initialData) {
 
     gameRef.child('moves').on('child_added', snap => {
         const move = snap.val();
-        renderFeedItem(move.displayName, move.extract, move.uid === currentUser.uid);
+        renderFeedItem(move.displayName, move.extract, move.uid === currentUser.uid, move.cpEarned || 0);
     });
 }
 
@@ -352,7 +426,8 @@ function renderOnlineState(game, amIP1) {
 
     if (game.status === 'finished') {
         stopTimer();
-        playerInput.disabled = true; submitBtn.disabled = true; isMyTurn = false;
+        isMyTurn = false;
+        triggerGameOver();
         if (game.winner === currentUser.uid) {
             turnIndicator.textContent = "VICTORY"; turnIndicator.style.color = "var(--win)";
             statusBox.textContent = "WIN"; setSystemMessage("opponent eliminated. you win!", false);
@@ -363,7 +438,6 @@ function renderOnlineState(game, amIP1) {
         return;
     }
 
-    // if turn changed, update ui and timer
     const newlyMyTurn = (game.turn === currentUser.uid);
     if(newlyMyTurn !== isMyTurn) {
         isMyTurn = newlyMyTurn;
@@ -384,7 +458,7 @@ function renderOnlineState(game, amIP1) {
     currentLetter = game.currentLetter || '';
 }
 
-// 5. SHARED INPUT HANDLER
+// 7. SHARED INPUT HANDLER
 submitBtn.addEventListener('click', handleMoveWrapper);
 playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleMoveWrapper(); });
 
@@ -399,7 +473,6 @@ async function handleMoveWrapper() {
         punishLogic(`must start with '${currentLetter.toUpperCase()}'.`); return;
     }
 
-    // pause timer while validating
     clearInterval(turnTimer);
     playerInput.disabled = true; submitBtn.disabled = true;
     setSystemMessage(`verifying '${inputName}'...`, false);
@@ -418,8 +491,9 @@ async function handleMoveWrapper() {
     if (isMultiplayer && gameData && gameData.usedPlayers && gameData.usedPlayers[trueFullName]) { punishLogic(`${trueFullName.toUpperCase()} already used.`); return; }
     if (!extract || !extract.toLowerCase().includes("cricket")) { punishLogic(`could not verify '${inputName}' as a cricketer.`); return; }
 
+    const demo = scanDemographics(extract);
+
     if (!isMultiplayer) {
-        const demo = scanDemographics(extract);
         if (currentCategory === 'intl' && !demo.isIntl) { punishLogic(`requires intl experience.`); return; }
         if (currentCategory === 'domestic' && demo.isIntl) { punishLogic(`domestic only.`); return; }
         if (currentCategory === 'women' && !demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
@@ -437,16 +511,18 @@ async function handleMoveWrapper() {
         }
     }
 
+    const earnedCP = await awardCP(extract, demo);
+
     if (isMultiplayer) {
         const oppUid = (gameData.p1.uid === currentUser.uid) ? gameData.p2.uid : gameData.p1.uid;
         await gameRef.update({ currentLetter: getLastLetterOfSurname(inputName), turn: oppUid, [`usedPlayers/${trueFullName}`]: true, moveCount: (gameData.moveCount || 0) + 1 });
-        gameRef.child('moves').push().set({ displayName: inputName, extract, uid: currentUser.uid });
+        gameRef.child('moves').push().set({ displayName: inputName, extract, uid: currentUser.uid, cpEarned: earnedCP });
     } else {
         usedPlayers.add(trueFullName);
         currentLetter = getLastLetterOfSurname(inputName);
         statusBox.textContent = currentLetter.toUpperCase();
         score++; scoreEl.textContent = score;
-        renderFeedItem(inputName, extract, true);
+        renderFeedItem(inputName, extract, true, earnedCP);
         setTimeout(computerTurn, 1000);
     }
 }
@@ -465,7 +541,7 @@ async function punishLogic(reason) {
             setSystemMessage(`strike! ${reason}`, true);
             await gameRef.update({ [`${isP1 ? 'p1' : 'p2'}/lives`]: currentLives - 1 });
             playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
-            startTimer(); // resume timer on a mistake (keeps turn)
+            startTimer(); 
         }
     } else {
         lives--;
@@ -473,17 +549,17 @@ async function punishLogic(reason) {
         if (lives <= 0) {
             statusBox.textContent = "OVER"; statusBox.style.color = "var(--loss)";
             setSystemMessage(`// ${reason} out of lives.`, true);
-            playerInput.disabled = true; submitBtn.disabled = true; stopTimer();
+            triggerGameOver();
         } else {
             setSystemMessage(`strike! ${reason}`, true);
             playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
-            startTimer(); // resume timer
+            startTimer(); 
         }
     }
 }
 
-// 6. SHARED HELPERS
-function renderFeedItem(displayName, extract, isMe) {
+// 8. SHARED HELPERS
+function renderFeedItem(displayName, extract, isMe, cpEarned) {
     const div = document.createElement('div');
     div.className = `feed-item ${isMe ? 'player' : (isMultiplayer ? 'opponent' : 'cpu')}`;
     
@@ -493,8 +569,10 @@ function renderFeedItem(displayName, extract, isMe) {
         const isIntl = summaryText.toLowerCase().includes('international') || summaryText.toLowerCase().includes('test match');
         summaryHtml = `<div class="player-badges">${isIntl ? '<span class="badge intl">intl</span>' : '<span class="badge">domestic</span>'}</div><div class="player-summary">${summaryText}</div>`;
     }
+    
+    let cpText = isMe && cpEarned > 0 ? `<div class="feed-earned-cp">+${cpEarned} CP</div>` : `<div></div>`;
 
-    div.innerHTML = `<div class="feed-header"><div class="feed-meta">${isMe ? 'you' : (isMultiplayer ? 'opponent' : 'cpu')}</div><div class="feed-name">${displayName.toUpperCase()}</div></div><div class="feed-details">${summaryHtml}</div>`;
+    div.innerHTML = `<div class="feed-header"><div class="feed-meta"><span>${isMe ? 'you' : (isMultiplayer ? 'opponent' : 'cpu')}</span>${cpText}</div><div class="feed-name">${displayName.toUpperCase()}</div></div><div class="feed-details">${summaryHtml}</div>`;
     chainList.prepend(div);
     while (chainList.children.length > 2) chainList.removeChild(chainList.lastChild);
 }
