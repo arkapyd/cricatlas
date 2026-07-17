@@ -58,6 +58,12 @@ const btnBackLobby = document.getElementById('back-from-lobby-btn');
 const btnReturnMain = document.getElementById('btn-return-main');
 const installAppBtn = document.getElementById('install-app-btn');
 
+// private room hooks
+const btnCreatePrivate = document.getElementById('btn-create-private');
+const btnJoinPrivate = document.getElementById('btn-join-private');
+const privateCodeInput = document.getElementById('private-code-input');
+const privateCodeDisplay = document.getElementById('private-code-display');
+
 // leave game modal elements
 const leaveGameBtn = document.getElementById('leave-game-btn');
 const leaveConfirmModal = document.getElementById('leave-confirm-modal');
@@ -191,6 +197,10 @@ function returnToMainMenu() {
     mainMenu.style.display = 'block';
     stopTimer();
     if (gameRef) gameRef.off();
+    if (privateCodeDisplay) privateCodeDisplay.classList.add('hide-element');
+    findMatchBtn.disabled = false;
+    findMatchBtn.textContent = 'FIND MATCH';
+    lobbyStatus.textContent = 'ready to enter the arena';
 }
 
 btnBackMain.addEventListener('click', returnToMainMenu);
@@ -227,8 +237,12 @@ if (leaveYesBtn) {
             const snap = await gameRef.once('value');
             const game = snap.val();
             const isP1 = game.p1.uid === currentUser.uid;
-            const oppUid = isP1 ? game.p2.uid : game.p1.uid;
-            await gameRef.update({ status: 'finished', winner: oppUid, [`${isP1 ? 'p1' : 'p2'}/lives`]: 0 });
+            const oppUid = isP1 ? (game.p2 ? game.p2.uid : null) : game.p1.uid;
+            if (oppUid) {
+                await gameRef.update({ status: 'finished', winner: oppUid, [`${isP1 ? 'p1' : 'p2'}/lives`]: 0 });
+            } else {
+                await gameRef.update({ status: 'finished' });
+            }
         } else {
             lives = 0;
             updateLivesDisplay();
@@ -391,6 +405,7 @@ async function handleTimeout() {
         }
     }
 }
+
 // tab switching logic
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabPanes = document.querySelectorAll('.tab-pane');
@@ -441,7 +456,6 @@ const careerTiers = [
 function updateCareerDisplay(totalCp) {
     let currentTierIndex = 0;
     
-    // find current rank
     for (let i = 0; i < careerTiers.length; i++) {
         if (totalCp >= careerTiers[i].threshold) {
             currentTierIndex = i;
@@ -468,7 +482,6 @@ function updateCareerDisplay(totalCp) {
         document.getElementById('next-rank-title').textContent = nextTier.name;
         document.getElementById('cp-remaining-text').textContent = `(${parseFloat(cpNeeded).toFixed(1)} cp needed)`;
     } else {
-        // max rank reached
         fillEl.style.width = '100%';
         document.getElementById('next-rank-title').textContent = "max rank reached";
         document.getElementById('cp-remaining-text').textContent = "";
@@ -587,29 +600,157 @@ async function computerTurn() {
     startTimer();
 }
 
+// atomic latency-proof ranked matchmaking
 findMatchBtn.addEventListener('click', () => {
-    findMatchBtn.disabled = true; findMatchBtn.textContent = 'SEARCHING...';
-    lobbyStatus.textContent = 'looking for an open arena...';
+    findMatchBtn.disabled = true; 
+    findMatchBtn.textContent = 'SEARCHING...';
+    lobbyStatus.textContent = 'connecting to global ranked arena...';
 
-    const queueRef = db.ref('queue');
-    queueRef.orderByChild('status').equalTo('waiting').limitToFirst(1).once('value', snap => {
-        if (snap.exists()) {
-            const matchId = Object.keys(snap.val())[0];
-            db.ref(`queue/${matchId}`).transaction(g => {
-                if(g && g.status === 'waiting') { g.status = 'playing'; g.p2 = { uid: currentUser.uid, name: currentUser.displayName, lives: 3 }; g.turn = g.p1.uid; g.currentLetter = ''; g.usedPlayers = { placeholder: true }; g.moveCount = 0; return g; }
-            }, (err, comm, snapshot) => { 
-                if(comm) initOnlineEngine(matchId, snapshot.val()); 
-                else { findMatchBtn.disabled = false; findMatchBtn.click(); }
+    const lobbyRef = db.ref('ranked_lobby');
+    lobbyRef.transaction(current => {
+        if (!current || current.status === 'full') {
+            const newGameKey = db.ref('games').push().key;
+            return {
+                gameId: newGameKey,
+                status: 'waiting',
+                p1: { uid: currentUser.uid, name: currentUser.displayName }
+            };
+        } else if (current.status === 'waiting') {
+            if (current.p1.uid === currentUser.uid) return; 
+            current.status = 'full';
+            current.p2 = { uid: currentUser.uid, name: currentUser.displayName };
+            return current;
+        }
+    }, (err, committed, snapshot) => {
+        if (!committed || err) {
+            findMatchBtn.disabled = false;
+            findMatchBtn.textContent = 'FIND MATCH';
+            lobbyStatus.textContent = 'matchmaking timeout. please try again.';
+            return;
+        }
+
+        const res = snapshot.val();
+        currentGameId = res.gameId;
+        gameRef = db.ref(`games/${currentGameId}`);
+
+        if (res.p1.uid === currentUser.uid) {
+            gameRef.set({
+                status: 'waiting',
+                isRanked: true,
+                p1: { uid: currentUser.uid, name: currentUser.displayName, lives: 3 },
+                createdAt: firebase.database.ServerValue.TIMESTAMP
+            });
+
+            lobbyStatus.textContent = 'room created. waiting for opponent to bridge...';
+
+            gameRef.on('value', function listener(s) {
+                const g = s.val();
+                if (g && g.status === 'playing') {
+                    gameRef.off('value', listener);
+                    db.ref('ranked_lobby').transaction(curr => { if (curr && curr.gameId === currentGameId) return null; });
+                    initOnlineEngine(currentGameId, g);
+                }
             });
         } else {
-            const ref = queueRef.push();
-            currentGameId = ref.key;
-            ref.set({ status: 'waiting', p1: { uid: currentUser.uid, name: currentUser.displayName, lives: 3 }, createdAt: firebase.database.ServerValue.TIMESTAMP });
-            ref.on('value', snap => { const g = snap.val(); if(g && g.status === 'playing') { ref.off(); initOnlineEngine(currentGameId, g); }});
+            gameRef.update({
+                status: 'playing',
+                p2: { uid: currentUser.uid, name: currentUser.displayName, lives: 3 },
+                turn: res.p1.uid,
+                currentLetter: '',
+                moveCount: 0
+            }).then(() => {
+                db.ref('ranked_lobby').transaction(curr => { if (curr && curr.gameId === currentGameId) return null; });
+                gameRef.once('value', s => { initOnlineEngine(currentGameId, s.val()); });
+            });
         }
     });
 });
 
+// custom private room management
+if (btnCreatePrivate) {
+    btnCreatePrivate.addEventListener('click', () => {
+        btnCreatePrivate.disabled = true;
+        lobbyStatus.textContent = 'generating secure match code...';
+        
+        const generateCode = () => Math.floor(1000 + Math.random() * 9000).toString();
+        
+        const attemptCreate = () => {
+            const code = generateCode();
+            const roomRef = db.ref(`private_rooms/${code}`);
+            
+            roomRef.transaction(current => {
+                if (current === null) {
+                    return {
+                        status: 'waiting',
+                        isRanked: false,
+                        p1: { uid: currentUser.uid, name: currentUser.displayName, lives: 3 },
+                        createdAt: firebase.database.ServerValue.TIMESTAMP
+                    };
+                }
+            }, (err, committed, snap) => {
+                if (err || !committed) {
+                    attemptCreate(); 
+                    return;
+                }
+                
+                currentGameId = code;
+                gameRef = roomRef;
+                
+                if (privateCodeDisplay) {
+                    privateCodeDisplay.classList.remove('hide-element');
+                    privateCodeDisplay.innerHTML = `room code: <span>${code}</span>`;
+                }
+                lobbyStatus.textContent = 'send the room code to your friend...';
+                
+                gameRef.on('value', function privateListener(s) {
+                    const g = s.val();
+                    if (g && g.status === 'playing') {
+                        gameRef.off('value', privateListener);
+                        if (privateCodeDisplay) privateCodeDisplay.classList.add('hide-element');
+                        btnCreatePrivate.disabled = false;
+                        initOnlineEngine(code, g);
+                    }
+                });
+            });
+        };
+        attemptCreate();
+    });
+}
+
+if (btnJoinPrivate) {
+    btnJoinPrivate.addEventListener('click', () => {
+        const code = privateCodeInput.value.trim();
+        if (!code || code.length !== 4) { lobbyStatus.textContent = 'enter a valid 4-digit code.'; return; }
+        
+        btnJoinPrivate.disabled = true;
+        lobbyStatus.textContent = `searching for room ${code}...`;
+        
+        const roomRef = db.ref(`private_rooms/${code}`);
+        roomRef.transaction(current => {
+            if (current && current.status === 'waiting') {
+                if (current.p1.uid === currentUser.uid) return; 
+                current.status = 'playing';
+                current.p2 = { uid: currentUser.uid, name: currentUser.displayName, lives: 3 };
+                current.turn = current.p1.uid;
+                current.currentLetter = '';
+                current.moveCount = 0;
+                return current;
+            }
+        }, (err, committed, snap) => {
+            btnJoinPrivate.disabled = false;
+            if (committed && snap.exists()) {
+                currentGameId = code;
+                gameRef = roomRef;
+                if (privateCodeDisplay) privateCodeDisplay.classList.add('hide-element');
+                initOnlineEngine(code, snap.val());
+            } else {
+                lobbyStatus.textContent = 'room unavailable, expired, or full.';
+            }
+        });
+    });
+}
+
+// updated online engine layer to handle waiting states gracefully
 function initOnlineEngine(gameId, initialData) {
     lobbyView.style.display = 'none'; 
     gameView.style.display = 'flex'; 
@@ -620,10 +761,10 @@ function initOnlineEngine(gameId, initialData) {
     
     const isP1 = initialData.p1.uid === currentUser.uid;
     const opponent = isP1 ? initialData.p2 : initialData.p1;
-    opponentNameEl.textContent = opponent.name.split(' ')[0];
+    opponentNameEl.textContent = opponent ? opponent.name.split(' ')[0] : 'WAITING';
     opponentLivesEl.classList.remove('hide-element');
 
-    gameRef = db.ref(`queue/${gameId}`);
+    gameRef.child('moves').off();
     gameRef.on('value', snap => {
         const game = snap.val(); if (!game) return;
         renderOnlineState(game, isP1);
@@ -636,12 +777,26 @@ function initOnlineEngine(gameId, initialData) {
 }
 
 function renderOnlineState(game, amIP1) {
-    const myLives = amIP1 ? game.p1.lives : game.p2.lives;
-    const oppLives = amIP1 ? game.p2.lives : game.p1.lives;
+    const myLives = amIP1 ? game.p1.lives : (game.p2 ? game.p2.lives : 3);
+    const oppLives = amIP1 ? (game.p2 ? game.p2.lives : 3) : game.p1.lives;
     
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, myLives)) + '♡'.repeat(Math.max(0, 3 - myLives));
     opponentLivesEl.textContent = '♥'.repeat(Math.max(0, oppLives)) + '♡'.repeat(Math.max(0, 3 - oppLives));
     scoreEl.textContent = game.moveCount || 0;
+
+    if (game.p2) {
+        const opponent = amIP1 ? game.p2 : game.p1;
+        opponentNameEl.textContent = opponent.name.split(' ')[0];
+    }
+
+    if (game.status === 'waiting') {
+        turnIndicator.textContent = "WAITING FOR FRIEND";
+        turnIndicator.style.color = "var(--text-dim)";
+        statusBox.textContent = "----";
+        playerInput.disabled = true; submitBtn.disabled = true;
+        stopTimer();
+        return;
+    }
 
     if (game.status === 'finished') {
         stopTimer();
@@ -680,6 +835,7 @@ function renderOnlineState(game, amIP1) {
 bindFastTap(submitBtn, handleMoveWrapper);
 playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleMoveWrapper(); });
 
+// update input execution loop to respect ranked metrics
 async function handleMoveWrapper() {
     if (isMultiplayer && !isMyTurn) return;
     
@@ -696,8 +852,10 @@ async function handleMoveWrapper() {
     setSystemMessage(`verifying '${inputName}'...`, false);
 
     let gameData = null;
+    let isRanked = true;
     if (isMultiplayer) {
         const snap = await gameRef.once('value'); gameData = snap.val();
+        isRanked = gameData.isRanked !== false;
         if (gameData.usedPlayers && gameData.usedPlayers[inputName]) { punishLogic(`${inputName.toUpperCase()} was used.`); return; }
     }
 
@@ -711,29 +869,8 @@ async function handleMoveWrapper() {
 
     const demo = scanDemographics(extract);
 
-    if (!isMultiplayer) {
-        if (currentCategory !== 'general') {
-            if (currentCategory === 'intl' && !demo.isIntl) { punishLogic(`requires intl experience.`); return; }
-            if (currentCategory === 'domestic' && demo.isIntl) { punishLogic(`domestic only.`); return; }
-            if (currentCategory === 'women' && !demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
-            if (currentCategory === 'men' && demo.isWomen) { punishLogic(`demographic mismatch.`); return; }
-        }
-
-        const formats = getNameFormats(trueFullName, wikiData.isUnresolved);
-        const inputParts = inputName.split(/\s+/);
-
-        if (currentMode === 'medium') {
-            if (wikiData.isUnresolved && inputParts[0].length <= 2) { punishLogic(`full first name required.`); return; }
-            if (inputParts[0].toLowerCase() !== formats.givenNames[0].toLowerCase()) { punishLogic(`fully correct first name required.`); return; }
-        } else if (currentMode === 'hard') {
-            const iC = inputName.toLowerCase().replace(/\s+/g, '');
-            const inC = formats.initials.toLowerCase().replace(/\s+/g, '');
-            const fC = formats.full.toLowerCase().replace(/\s+/g, '');
-            if (iC !== fC && iC !== inC) { punishLogic(`exact initials or full birth name required.`); return; }
-        }
-    }
-
-    const earnedCP = await awardCP(extract, demo);
+    // skip cp if it's an unranked custom room
+    const earnedCP = isRanked ? await awardCP(extract, demo) : 0;
 
     if (isMultiplayer) {
         const oppUid = (gameData.p1.uid === currentUser.uid) ? gameData.p2.uid : gameData.p1.uid;
@@ -820,7 +957,6 @@ function scanDemographics(extract) {
     if (!extract) return { isIntl: false, isWomen: false, isMen: false };
     const l = extract.toLowerCase();
     
-    // broadened the keywords to catch players like wasim jaffer who are missing the word 'international'
     const isIntl = l.includes('international') || 
                    l.includes('test match') || 
                    l.includes('test cricketer') ||
@@ -872,7 +1008,6 @@ async function resolveFullName(queryName) {
         }
         
         const queryNameLower = queryName.trim().toLowerCase();
-        // extract strictly the first alphabetical character of the query
         const firstInitial = queryNameLower.replace(/[^a-z]/g, '').charAt(0);
         const surname = queryNameLower.split(/\s+/).pop();
 
@@ -882,7 +1017,6 @@ async function resolveFullName(queryName) {
             const extract = pageData.extract || "";
             const extractLower = extract.toLowerCase();
             
-            // block hidden disambiguation pages from slipping through
             if (extractLower.includes("may refer to:") || extractLower.includes("is a disambiguation page")) continue;
 
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
@@ -890,7 +1024,6 @@ async function resolveFullName(queryName) {
             const normSurname = surname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const titleFirstInitial = normTitle.replace(/[^a-z]/g, '').charAt(0);
 
-            // verify cricket mention, surname presence, AND matching first letter
             if (extractLower.includes("cricket") && normTitle.includes(normSurname) && titleFirstInitial === firstInitial) {
                 const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
                 return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
