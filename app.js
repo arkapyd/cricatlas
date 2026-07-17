@@ -782,15 +782,32 @@ async function resolveFullName(queryName) {
     try {
         let data = await fetchWiki(encodeURIComponent(`intitle:"${queryName}" cricketer`));
         let pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
-        if (pages.length === 0) { data = await fetchWiki(encodeURIComponent(`${queryName} cricketer`)); pages = data.query && data.query.pages ? Object.values(data.query.pages) : []; }
-        const surname = queryName.trim().split(/\s+/).pop().toLowerCase();
+        if (pages.length === 0) { 
+            data = await fetchWiki(encodeURIComponent(`${queryName} cricketer`)); 
+            pages = data.query && data.query.pages ? Object.values(data.query.pages) : []; 
+        }
+        
+        const queryNameLower = queryName.trim().toLowerCase();
+        // extract strictly the first alphabetical character of the query
+        const firstInitial = queryNameLower.replace(/[^a-z]/g, '').charAt(0);
+        const surname = queryNameLower.split(/\s+/).pop();
 
         for (let pageData of pages) {
-            if (pageData.title.includes("(disambiguation)")) continue;
-            const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase(), extract = pageData.extract || "";
-            const normTitle = title.normalize("NFD").replace(/[\u0300-\u036f]/g, ""), normSurname = surname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            if (pageData.title.toLowerCase().includes("(disambiguation)")) continue;
+            
+            const extract = pageData.extract || "";
+            const extractLower = extract.toLowerCase();
+            
+            // block hidden disambiguation pages from slipping through
+            if (extractLower.includes("may refer to:") || extractLower.includes("is a disambiguation page")) continue;
 
-            if (extract.toLowerCase().includes("cricket") && normTitle.includes(normSurname)) {
+            const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
+            const normTitle = title.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const normSurname = surname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const titleFirstInitial = normTitle.replace(/[^a-z]/g, '').charAt(0);
+
+            // verify cricket mention, surname presence, AND matching first letter
+            if (extractLower.includes("cricket") && normTitle.includes(normSurname) && titleFirstInitial === firstInitial) {
                 const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
                 return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
             }
