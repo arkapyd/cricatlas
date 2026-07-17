@@ -16,7 +16,7 @@ const firebaseConfig = {
 
 firebase.initializeApp(firebaseConfig);
 const auth = firebase.auth();
- db = firebase.database();
+const db = firebase.database();
 
 // shared state
 let isMultiplayer = false;
@@ -43,41 +43,41 @@ let totalUserCP = 0;
 let deferredPrompt;
 
 // ui elements
- authView = document.getElementById('auth-view');
- welcomeView = document.getElementById('welcome-view');
- lobbyView = document.getElementById('lobby-view');
- gameView = document.getElementById('game-view');
+const authView = document.getElementById('auth-view');
+const welcomeView = document.getElementById('welcome-view');
+const lobbyView = document.getElementById('lobby-view');
+const gameView = document.getElementById('game-view');
 
- mainMenu = document.getElementById('main-menu');
- offlineSetup = document.getElementById('offline-setup');
+const mainMenu = document.getElementById('main-menu');
+const offlineSetup = document.getElementById('offline-setup');
 
- btnOffline = document.getElementById('btn-offline');
- btnOnline = document.getElementById('btn-online');
- btnBackMain = document.getElementById('back-to-main-btn');
- btnBackLobby = document.getElementById('back-from-lobby-btn');
- btnReturnMain = document.getElementById('btn-return-main');
- installAppBtn = document.getElementById('install-app-btn');
+const btnOffline = document.getElementById('btn-offline');
+const btnOnline = document.getElementById('btn-online');
+const btnBackMain = document.getElementById('back-to-main-btn');
+const btnBackLobby = document.getElementById('back-from-lobby-btn');
+const btnReturnMain = document.getElementById('btn-return-main');
+const installAppBtn = document.getElementById('install-app-btn');
 
 // leave game modal elements
- leaveGameBtn = document.getElementById('leave-game-btn');
- leaveConfirmModal = document.getElementById('leave-confirm-modal');
- leaveYesBtn = document.getElementById('leave-yes-btn');
- leaveNoBtn = document.getElementById('leave-no-btn');
+const leaveGameBtn = document.getElementById('leave-game-btn');
+const leaveConfirmModal = document.getElementById('leave-confirm-modal');
+const leaveYesBtn = document.getElementById('leave-yes-btn');
+const leaveNoBtn = document.getElementById('leave-no-btn');
 
- diffTabs = document.querySelectorAll('.diff-btn');
- catTabs = document.querySelectorAll('.cat-btn');
- modeHelpText = document.getElementById('mode-help-text');
- startOfflineBtn = document.getElementById('start-offline-btn');
+const diffTabs = document.querySelectorAll('.diff-btn');
+const catTabs = document.querySelectorAll('.cat-btn');
+const modeHelpText = document.getElementById('mode-help-text');
+const startOfflineBtn = document.getElementById('start-offline-btn');
 
- loginBtn = document.getElementById('google-login-btn');
- logoutBtn = document.getElementById('logout-btn');
- findMatchBtn = document.getElementById('find-match-btn');
- lobbyStatus = document.getElementById('lobby-status');
- playerNameDisplay = document.getElementById('player-name-display');
- lobbyPlayerName = document.getElementById('lobby-player-name');
- userCpDisplay = document.getElementById('user-cp-display');
+const loginBtn = document.getElementById('google-login-btn');
+const logoutBtn = document.getElementById('logout-btn');
+const findMatchBtn = document.getElementById('find-match-btn');
+const lobbyStatus = document.getElementById('lobby-status');
+const playerNameDisplay = document.getElementById('player-name-display');
+const lobbyPlayerName = document.getElementById('lobby-player-name');
+const userCpDisplay = document.getElementById('user-cp-display');
 
- opponentNameEl = document.getElementById('opponent-name');
+const opponentNameEl = document.getElementById('opponent-name');
 const opponentLivesEl = document.getElementById('opponent-lives');
 const yourLivesEl = document.getElementById('your-lives');
 const turnIndicator = document.getElementById('turn-indicator');
@@ -475,15 +475,6 @@ function updateCareerDisplay(totalCp) {
     }
 }
 
-// wherever your onAuthStateChanged fires and retrieves the user's CP from firebase,
-// call updateCareerDisplay(totalUserCP). for example:
-/*
-db.ref(`users/${user.uid}/cp`).on('value', snap => {
-    totalUserCP = snap.val() || 0;
-    userCpDisplay.textContent = `${parseFloat(totalUserCP).toFixed(1)} CP`;
-    updateCareerDisplay(totalUserCP); // hook it in here
-});
-*/
 function updateLivesDisplay() {
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
 }
