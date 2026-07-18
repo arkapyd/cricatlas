@@ -30,6 +30,31 @@ window.adBreak = window.adBreak || function(o) {
     if (o.afterAd) o.afterAd();
 };
 
+// career tiers configuration (21 tiers)
+const careerTiers = [
+    { name: "gully cricketer", minCP: 0 },
+    { name: "local club sub", minCP: 5 },
+    { name: "local club player", minCP: 15 },
+    { name: "school team reserve", minCP: 25 },
+    { name: "school team captain", minCP: 40 },
+    { name: "district u19 reserve", minCP: 60 },
+    { name: "district u19 player", minCP: 85 },
+    { name: "district u19 captain", minCP: 115 },
+    { name: "state u19 reserve", minCP: 150 },
+    { name: "state u19 player", minCP: 190 },
+    { name: "state u19 captain", minCP: 240 },
+    { name: "ranji squad", minCP: 300 },
+    { name: "ranji starter", minCP: 370 },
+    { name: "ranji star", minCP: 450 },
+    { name: "franchise net bowler", minCP: 540 },
+    { name: "franchise bench", minCP: 640 },
+    { name: "franchise regular", minCP: 750 },
+    { name: "franchise star", minCP: 870 },
+    { name: "national debutant", minCP: 1000 },
+    { name: "national regular", minCP: 1200 },
+    { name: "national team captain", minCP: 1500 }
+];
+
 // shared state
 let isMultiplayer = false;
 let currentLetter = '';
@@ -148,6 +173,44 @@ function bindFastTap(element, callback) {
     });
 }
 
+function updateCareerUI(currentCP) {
+    let currentRank = careerTiers[0];
+    let nextRank = careerTiers[1];
+    
+    for (let i = 0; i < careerTiers.length; i++) {
+        if (currentCP >= careerTiers[i].minCP) {
+            currentRank = careerTiers[i];
+            nextRank = careerTiers[i + 1] || currentRank;
+        } else {
+            break;
+        }
+    }
+
+    const rankNameEl = document.getElementById('career-rank-name');
+    const rankImgEl = document.getElementById('career-rank-img');
+    const rankProgressEl = document.getElementById('career-progress-bar');
+    const cpToNextEl = document.getElementById('cp-to-next-rank');
+    
+    if (rankNameEl) rankNameEl.textContent = currentRank.name;
+    
+    if (rankImgEl) {
+        const imgName = currentRank.name.toLowerCase().replace(/\s+/g, '-');
+        rankImgEl.src = `./assets/${imgName}.png`;
+    }
+
+    if (rankProgressEl && currentRank !== nextRank) {
+        const range = nextRank.minCP - currentRank.minCP;
+        const earned = currentCP - currentRank.minCP;
+        const percent = (earned / range) * 100;
+        
+        rankProgressEl.style.width = `${percent}%`;
+        if (cpToNextEl) cpToNextEl.textContent = `${(nextRank.minCP - currentCP).toFixed(1)} cp to next rank`;
+    } else if (rankProgressEl) {
+        rankProgressEl.style.width = `100%`;
+        if (cpToNextEl) cpToNextEl.textContent = `max rank achieved`;
+    }
+}
+
 auth.onAuthStateChanged(user => {
     if (user) {
         currentUser = user;
@@ -158,6 +221,7 @@ auth.onAuthStateChanged(user => {
         db.ref(`users/${user.uid}/cp`).on('value', snap => {
             totalUserCP = snap.val() || 0;
             userCpDisplay.textContent = `${parseFloat(totalUserCP).toFixed(1)} CP`;
+            updateCareerUI(totalUserCP);
         });
 
         authView.style.display = 'none';
@@ -272,6 +336,24 @@ if (leaveYesBtn) {
             lives = 0; updateLivesDisplay();
             setSystemMessage(`you forfeited the game.`, true);
             finalizeGameOver(false, null);
+        }
+    });
+}
+
+// basic private room skeleton
+if (btnCreatePrivate) {
+    btnCreatePrivate.addEventListener('click', () => {
+        const code = Math.floor(1000 + Math.random() * 9000).toString();
+        // implement room creation logic pushing to db.ref('private_rooms/' + code)
+        privateCodeDisplay.textContent = `room code: ${code}`;
+        privateCodeDisplay.classList.remove('hide-element');
+    });
+}
+if (btnJoinPrivate) {
+    btnJoinPrivate.addEventListener('click', () => {
+        const code = privateCodeInput.value;
+        if (code.length === 4) {
+            // implement join logic checking db.ref('private_rooms/' + code)
         }
     });
 }
