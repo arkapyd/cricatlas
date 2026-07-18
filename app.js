@@ -116,7 +116,7 @@ const chainList = document.getElementById('chain-list');
 const scoreEl = document.getElementById('score');
 
 const difficultyDesc = {
-    easy: "standard name chain. initials are accepted unless ambiguous.",
+    easy: "standard name chain. initials are accepted.",
     medium: "strict first names required. initials blocked.",
     hard: "extreme strictness. exact full birth names required."
 };
@@ -273,15 +273,15 @@ btnBackMain.addEventListener('click', returnToMainMenu);
 btnBackLobby.addEventListener('click', returnToMainMenu);
 btnReturnMain.addEventListener('click', returnToMainMenu);
 
+// engine selection listeners
 diffTabs.forEach(tab => tab.addEventListener('click', (e) => {
     diffTabs.forEach(t => t.classList.remove('active')); 
     e.currentTarget.classList.add('active');
     
-    // grabs from data-mode, falls back to reading the button's text if the attribute is missing
     let val = e.currentTarget.getAttribute('data-mode');
-    if (!val) val = e.currentTarget.textContent.toLowerCase().trim();
+    if (!val) val = e.currentTarget.textContent;
+    currentMode = val.toLowerCase().trim(); 
     
-    currentMode = val; 
     updateHelpText();
 }));
 
@@ -289,11 +289,10 @@ catTabs.forEach(tab => tab.addEventListener('click', (e) => {
     catTabs.forEach(t => t.classList.remove('active')); 
     e.currentTarget.classList.add('active');
     
-    // grabs from data-category, falls back to reading the button's text if the attribute is missing
     let val = e.currentTarget.getAttribute('data-category');
-    if (!val) val = e.currentTarget.textContent.toLowerCase().replace(' only', '').trim();
+    if (!val) val = e.currentTarget.textContent;
+    currentCategory = val.toLowerCase().replace(' only', '').trim(); 
     
-    currentCategory = val; 
     updateHelpText();
 }));
 
