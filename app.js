@@ -659,11 +659,57 @@ btnOffline.addEventListener('click', () => {
         let sourceData = data.players ? data.players : data;
         let rawArray = Array.isArray(sourceData) ? sourceData : Object.values(sourceData);
 
+        // normalization helper to resolve vowel typos and string noise
+        const normalizeCricketName = (str) => {
+            return (str || '')
+                .toLowerCase()
+                .replace(/[\s.-]/g, '')
+                .replace(/chakaravarthy/g, 'chakravarthy'); // explicit alias correction
+        };
+
+        // category validation logic
+        const matchesSelectedCategory = (player, cat) => {
+            if (!cat || cat === 'gen') return true;
+            
+            const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || '')).toLowerCase();
+            const pName = (player.name || '').toLowerCase();
+            
+            // explicit exception for international players with fuzzy database tags
+            if (pName.includes('chakravarthy') || pName.includes('chakaravarthy')) {
+                return cat === 'intl' || cat === 'men';
+            }
+            
+            const intlKeywords = ['india', 'test match', 'odi', 't20i', 'international', 'world cup', 'asia cup', 'represent', 'cap'];
+            const domesticKeywords = ['ranji', 'syed mushtaq', 'vijay hazare', 'ipl', 'county cricket'];
+            
+            if (cat === 'intl') {
+                const hasIntlKeyword = intlKeywords.some(kw => bioText.includes(kw));
+                return player.is_international === true || player.international === true || hasIntlKeyword;
+            }
+            if (cat === 'dom') {
+                const hasDomKeyword = domesticKeywords.some(kw => bioText.includes(kw));
+                const isIntl = player.is_international === true || player.international === true || intlKeywords.some(kw => bioText.includes(kw));
+                return hasDomKeyword || !isIntl;
+            }
+            if (cat === 'men') {
+                return !bioText.includes('women') && !bioText.includes('wodi') && !bioText.includes('wt20i');
+            }
+            if (cat === 'wmn') {
+                return bioText.includes('women') || bioText.includes('wodi') || bioText.includes('wt20i') || bioText.includes('female');
+            }
+            return true;
+        };
+
+        // map, clean, and strictly filter the active pool by the chosen category
         playersCatalog = rawArray.map(p => ({
             name: (p.name || '').toLowerCase().trim(),
             unique_name: (p.unique_name || p.name || '').toLowerCase().trim(),
-            full_name: (p.full_name || '').toLowerCase().trim()
-        })).filter(p => p.name);
+            full_name: (p.full_name || '').toLowerCase().trim(),
+            bio: p.bio || '',
+            demographics: p.demographics || '',
+            is_international: p.is_international || p.international || false
+        }))
+        .filter(p => p.name && matchesSelectedCategory(p, currentCategory));
 
         if (!loaded) {
             playerInput.disabled = true; submitBtn.disabled = true;
@@ -1191,7 +1237,38 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     
     return { full, initials, givenNames, isMulti: givenNames.length > 1 };
 }
+const exitGameBtn = document.getElementById('exit-game-btn');
 
+if (exitGameBtn) {
+    exitGameBtn.addEventListener('click', () => {
+        const confirmForfeit = confirm("⚠️ danger: exiting now will forfeit all cp earned during this match! are you sure you want to quit?");
+        
+        if (confirmForfeit) {
+            // clear saved state so they cannot resume the match later
+            if (typeof localStorage !== 'undefined') {
+                localStorage.removeItem('offline_game_state');
+            }
+            
+            // clear running timers
+            if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
+            
+            // reset gameplay values
+            score = 0;
+            lives = 3;
+            usedPlayers.clear();
+            
+            // fire your existing main menu transition function
+            if (typeof executeReturn === 'function') {
+                executeReturn();
+            } else {
+                // fallback UI clean switch if executeReturn is out of scope
+                document.getElementById('game-view').style.display = 'none';
+                document.getElementById('welcome-view').style.display = 'block';
+                document.getElementById('main-menu').style.display = 'block';
+            }
+        }
+    });
+}
 async function resolveFullName(queryName) {
     const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=5&prop=extracts&exintro=1&explaintext=1`)).json();
     try {
