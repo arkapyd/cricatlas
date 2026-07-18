@@ -98,9 +98,9 @@ const chainList = document.getElementById('chain-list');
 const scoreEl = document.getElementById('score');
 
 const helpTexts = {
-    easy: "<span>easy:</span> standard name chain. initials are accepted.",
-    medium: "<span>medium:</span> strict first names required.",
-    hard: "<span>hard:</span> extreme strictness. exact initials or full birth names required.",
+    easy: "<span>easy:</span> standard name chain. initials are accepted unless ambiguous.",
+    medium: "<span>medium:</span> strict first names required. initials blocked.",
+    hard: "<span>hard:</span> extreme strictness. exact full birth names required.",
     general: "<span>general:</span> any verified cricketer is valid.",
     intl: "<span>intl only:</span> international experience required.",
     domestic: "<span>domestic only:</span> domestic experience only.",
@@ -217,7 +217,6 @@ catTabs.forEach(tab => tab.addEventListener('click', (e) => {
     currentCategory = e.target.getAttribute('data-category'); updateHelpText();
 }));
 
-// leave game popup logic
 if (leaveGameBtn) {
     leaveGameBtn.addEventListener('click', () => {
         leaveConfirmModal.classList.remove('hide-element');
@@ -406,20 +405,17 @@ async function handleTimeout() {
     }
 }
 
-// tab switching logic
 const tabBtns = document.querySelectorAll('.tab-btn');
 const tabPanes = document.querySelectorAll('.tab-pane');
 
 tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
-        // remove active states
         tabBtns.forEach(b => b.classList.remove('active'));
         tabPanes.forEach(p => {
             p.classList.remove('active-pane');
             p.classList.add('hide-element');
         });
         
-        // add active state to clicked
         btn.classList.add('active');
         const targetId = btn.getAttribute('data-target');
         const targetPane = document.getElementById(targetId);
@@ -428,7 +424,6 @@ tabBtns.forEach(btn => {
     });
 });
 
-// career progression logic
 const careerTiers = [
     { name: "gully cricketer", threshold: 0 },
     { name: "school cricketer", threshold: 50 },
@@ -600,7 +595,6 @@ async function computerTurn() {
     startTimer();
 }
 
-// atomic latency-proof ranked matchmaking
 findMatchBtn.addEventListener('click', () => {
     findMatchBtn.disabled = true; 
     findMatchBtn.textContent = 'SEARCHING...';
@@ -666,7 +660,6 @@ findMatchBtn.addEventListener('click', () => {
     });
 });
 
-// custom private room management
 if (btnCreatePrivate) {
     btnCreatePrivate.addEventListener('click', () => {
         btnCreatePrivate.disabled = true;
@@ -750,7 +743,6 @@ if (btnJoinPrivate) {
     });
 }
 
-// updated online engine layer to handle waiting states gracefully
 function initOnlineEngine(gameId, initialData) {
     lobbyView.style.display = 'none'; 
     gameView.style.display = 'flex'; 
@@ -835,7 +827,6 @@ function renderOnlineState(game, amIP1) {
 bindFastTap(submitBtn, handleMoveWrapper);
 playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleMoveWrapper(); });
 
-// update input execution loop to respect ranked metrics
 async function handleMoveWrapper() {
     if (isMultiplayer && !isMyTurn) return;
     
@@ -859,7 +850,49 @@ async function handleMoveWrapper() {
         if (gameData.usedPlayers && gameData.usedPlayers[inputName]) { punishLogic(`${inputName.toUpperCase()} was used.`); return; }
     }
 
-    const wikiData = await resolveFullName(inputName);
+    let targetSearchQuery = inputName;
+    const inputParts = inputName.split(/\s+/);
+    
+    if (currentMode === 'easy') {
+        const matchedCatalogPlayers = playersCatalog.filter(p => {
+            const pName = p.unique_name || p.name;
+            if (pName === inputName || p.full_name === inputName) return true;
+            
+            const catParts = pName.split(/\s+/);
+            if (catParts.length >= 2 && inputParts.length >= 2) {
+                const inputGiven = inputParts.slice(0, -1).join(' ');
+                const inputSurname = inputParts[inputParts.length - 1];
+                const catGiven = catParts.slice(0, -1).join(' ');
+                const catSurname = catParts[catParts.length - 1];
+                
+                if (catSurname === inputSurname && catGiven.startsWith(inputGiven)) {
+                    if (isMultiplayer && gameData?.usedPlayers?.[pName]) return false;
+                    if (!isMultiplayer && usedPlayers.has(pName)) return false;
+                    return true;
+                }
+            }
+            return false;
+        });
+
+        if (matchedCatalogPlayers.length > 1) {
+            const exactMatch = matchedCatalogPlayers.find(p => (p.unique_name || p.name) === inputName || p.full_name === inputName);
+            if (exactMatch) {
+                targetSearchQuery = exactMatch.unique_name || exactMatch.name;
+            } else {
+                punishLogic(`ambiguous input. multiple players match '${inputName}'. type the full first name.`);
+                return;
+            }
+        } else if (matchedCatalogPlayers.length === 1) {
+            targetSearchQuery = matchedCatalogPlayers[0].unique_name || matchedCatalogPlayers[0].name;
+        }
+    } else {
+        if (inputParts.length < 2 || inputParts[0].length === 1) {
+            punishLogic(`initials not allowed in ${currentMode} mode. use full first name.`);
+            return;
+        }
+    }
+
+    const wikiData = await resolveFullName(targetSearchQuery);
     const trueFullName = wikiData.resolved;
     const extract = wikiData.extract;
 
@@ -868,8 +901,6 @@ async function handleMoveWrapper() {
     if (!extract || !extract.toLowerCase().includes("cricket")) { punishLogic(`could not verify '${inputName}' as a cricketer.`); return; }
 
     const demo = scanDemographics(extract);
-
-    // skip cp if it's an unranked custom room
     const earnedCP = isRanked ? await awardCP(extract, demo) : 0;
 
     if (isMultiplayer) {
@@ -924,12 +955,8 @@ function renderFeedItem(displayName, extract, isMe, cpEarned) {
     div.className = `feed-item ${isMe ? 'player' : (isMultiplayer ? 'opponent' : 'cpu')}`;
     
     const demo = scanDemographics(extract);
-    let summaryHtml = `<div class="player-summary">no summary available.</div>`;
-    
-    if (extract) {
-        const summaryText = extract.split('\n')[0];
-        summaryHtml = `<div class="player-badges">${demo.isIntl ? '<span class="badge intl">intl</span>' : '<span class="badge">domestic</span>'}</div><div class="player-summary">${summaryText}</div>`;
-    }
+    const summaryText = extract ? extract.split('\n')[0] : `${displayName.toUpperCase()} is a professional cricketer recognized in the competitive sports registry.`;
+    const summaryHtml = `<div class="player-badges">${demo.isIntl ? '<span class="badge intl">intl</span>' : '<span class="badge">domestic</span>'}</div><div class="player-summary">${summaryText}</div>`;
     
     let cpText = isMe && cpEarned > 0 ? `<div class="feed-earned-cp">+${cpEarned} CP</div>` : `<div></div>`;
 
@@ -963,7 +990,11 @@ function scanDemographics(extract) {
                    l.includes('odi') || 
                    l.includes('t20i') || 
                    l.includes('national team') ||
-                   l.includes('cricket team'); 
+                   l.includes('cricket team') ||
+                   l.includes('squad') ||
+                   l.includes('asia cup') ||
+                   l.includes('world cup') ||
+                   l.includes('represented'); 
                    
     const isWomen = /\b(she|her)\b/i.test(l) || l.includes("women's");
     const isMen = /\b(he|his)\b/i.test(l) || l.includes("men's");
@@ -1008,8 +1039,9 @@ async function resolveFullName(queryName) {
         }
         
         const queryNameLower = queryName.trim().toLowerCase();
-        const firstInitial = queryNameLower.replace(/[^a-z]/g, '').charAt(0);
-        const surname = queryNameLower.split(/\s+/).pop();
+        const queryParts = queryNameLower.split(/\s+/);
+        const querySurname = queryParts[queryParts.length - 1];
+        const queryGiven = queryParts.slice(0, -1).join(' ');
 
         for (let pageData of pages) {
             if (pageData.title.toLowerCase().includes("(disambiguation)")) continue;
@@ -1020,13 +1052,18 @@ async function resolveFullName(queryName) {
             if (extractLower.includes("may refer to:") || extractLower.includes("is a disambiguation page")) continue;
 
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
-            const normTitle = title.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const normSurname = surname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const titleFirstInitial = normTitle.replace(/[^a-z]/g, '').charAt(0);
+            const titleParts = title.split(/\s+/);
+            const titleSurname = titleParts[titleParts.length - 1];
+            const titleGiven = titleParts.slice(0, -1).join(' ');
 
-            if (extractLower.includes("cricket") && normTitle.includes(normSurname) && titleFirstInitial === firstInitial) {
-                const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
-                return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
+            const normTitleSurname = titleSurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const normQuerySurname = querySurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+
+            if (extractLower.includes("cricket") && normTitleSurname === normQuerySurname) {
+                if (titleGiven.startsWith(queryGiven) || queryGiven.startsWith(titleGiven)) {
+                    const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
+                    return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
+                }
             }
         }
     } catch (e) { console.error("wiki error:", e); }
