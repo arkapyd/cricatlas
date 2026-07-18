@@ -635,58 +635,63 @@ function updateLivesDisplay() {
 btnOffline.addEventListener('click', () => {
     isMultiplayer = false;
     rewardedAdsUsed = 0;
+    
+    // 1. strict normalization: translate ui abbreviations back to engine keywords
+    const modeMap = { 'med': 'medium', 'medium': 'medium', 'hard': 'hard', 'easy': 'easy' };
+    const catMap = { 'gen': 'general', 'general': 'general', 'intl': 'international', 'international': 'international', 'dom': 'domestic', 'domestic': 'domestic', 'men': 'men', 'wmn': 'women', 'women': 'women' };
+    
+    currentMode = modeMap[(currentMode || '').toLowerCase().trim()] || 'easy';
+    currentCategory = catMap[(currentCategory || '').toLowerCase().trim()] || 'general';
+
     welcomeView.style.display = 'none';
     gameView.style.display = 'flex';
     playInputGroup.classList.remove('hide-element');
     gameOverPanel.classList.add('hide-element');
-    if (reviveContainer) reviveContainer.classList.add('hide-element');
+    if (typeof reviveContainer !== 'undefined' && reviveContainer) reviveContainer.classList.add('hide-element');
     opponentNameEl.textContent = 'CPU';
     opponentLivesEl.classList.add('hide-element');
     
-    const loaded = loadOfflineState();
+    const loaded = typeof loadOfflineState === 'function' ? loadOfflineState() : false;
     
     if (!loaded) {
-        lives = 3; score = 0; currentLetter = ''; usedPlayers.clear(); chainList.innerHTML = '';
-        scoreEl.textContent = score; updateLivesDisplay();
+        lives = 3; score = 0; currentLetter = ''; 
+        if (typeof usedPlayers !== 'undefined') usedPlayers.clear(); 
+        if (typeof chainList !== 'undefined') chainList.innerHTML = '';
+        if (typeof scoreEl !== 'undefined') scoreEl.textContent = score; 
+        if (typeof updateLivesDisplay === 'function') updateLivesDisplay();
     }
     
-    playerInput.value = '';
+    if (typeof playerInput !== 'undefined') playerInput.value = '';
     
     db.ref('players').once('value').then(snapshot => {
         const data = snapshot.val();
-        if (!data) { setSystemMessage("db error.", true); return; }
+        if (!data) { if (typeof setSystemMessage === 'function') setSystemMessage("db error.", true); return; }
         
         let sourceData = data.players ? data.players : data;
         let rawArray = Array.isArray(sourceData) ? sourceData : Object.values(sourceData);
 
-        // normalization helper to resolve vowel typos and string noise
         const normalizeCricketName = (str) => {
-            return (str || '')
-                .toLowerCase()
-                .replace(/[\s.-]/g, '')
-                .replace(/chakaravarthy/g, 'chakravarthy'); // explicit alias correction
+            return (str || '').toLowerCase().replace(/[\s.-]/g, '').replace(/chakaravarthy/g, 'chakravarthy');
         };
 
-        // category validation logic
         const matchesSelectedCategory = (player, cat) => {
-            if (!cat || cat === 'gen') return true;
+            if (cat === 'general') return true;
             
             const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || '')).toLowerCase();
             const pName = (player.name || '').toLowerCase();
             
-            // explicit exception for international players with fuzzy database tags
             if (pName.includes('chakravarthy') || pName.includes('chakaravarthy')) {
-                return cat === 'intl' || cat === 'men';
+                return cat === 'international' || cat === 'men';
             }
             
             const intlKeywords = ['india', 'test match', 'odi', 't20i', 'international', 'world cup', 'asia cup', 'represent', 'cap'];
             const domesticKeywords = ['ranji', 'syed mushtaq', 'vijay hazare', 'ipl', 'county cricket'];
             
-            if (cat === 'intl') {
+            if (cat === 'international') {
                 const hasIntlKeyword = intlKeywords.some(kw => bioText.includes(kw));
                 return player.is_international === true || player.international === true || hasIntlKeyword;
             }
-            if (cat === 'dom') {
+            if (cat === 'domestic') {
                 const hasDomKeyword = domesticKeywords.some(kw => bioText.includes(kw));
                 const isIntl = player.is_international === true || player.international === true || intlKeywords.some(kw => bioText.includes(kw));
                 return hasDomKeyword || !isIntl;
@@ -694,35 +699,54 @@ btnOffline.addEventListener('click', () => {
             if (cat === 'men') {
                 return !bioText.includes('women') && !bioText.includes('wodi') && !bioText.includes('wt20i');
             }
-            if (cat === 'wmn') {
+            if (cat === 'women') {
                 return bioText.includes('women') || bioText.includes('wodi') || bioText.includes('wt20i') || bioText.includes('female');
             }
             return true;
         };
 
-        // map, clean, and strictly filter the active pool by the chosen category
-        playersCatalog = rawArray.map(p => ({
+        let filteredPool = rawArray.map(p => ({
             name: (p.name || '').toLowerCase().trim(),
             unique_name: (p.unique_name || p.name || '').toLowerCase().trim(),
             full_name: (p.full_name || '').toLowerCase().trim(),
             bio: p.bio || '',
             demographics: p.demographics || '',
             is_international: p.is_international || p.international || false
-        }))
-        .filter(p => p.name && matchesSelectedCategory(p, currentCategory));
+        })).filter(p => p.name && matchesSelectedCategory(p, currentCategory));
+
+        // 2. fail-safe: if db lacks tags and removes everyone, fallback to general pool so the game doesn't crash
+        if (filteredPool.length === 0) {
+            console.warn(`[engine warning] category filter for '${currentCategory}' resulted in 0 players. overriding back to general pool.`);
+            filteredPool = rawArray.map(p => ({
+                name: (p.name || '').toLowerCase().trim(),
+                unique_name: (p.unique_name || p.name || '').toLowerCase().trim(),
+                full_name: (p.full_name || '').toLowerCase().trim()
+            })).filter(p => p.name);
+        }
+
+        playersCatalog = filteredPool;
 
         if (!loaded) {
-            playerInput.disabled = true; submitBtn.disabled = true;
-            turnIndicator.textContent = `MODE: ${currentMode}`;
-            turnIndicator.style.color = "var(--text)";
-            setSystemMessage("engine initialized. cpu will start.", false);
-            setTimeout(computerTurn, 800);
+            if (typeof playerInput !== 'undefined') playerInput.disabled = true; 
+            if (typeof submitBtn !== 'undefined') submitBtn.disabled = true;
+            if (typeof turnIndicator !== 'undefined') {
+                turnIndicator.textContent = `MODE: ${currentMode}`;
+                turnIndicator.style.color = "var(--text)";
+            }
+            if (typeof setSystemMessage === 'function') setSystemMessage("engine initialized. cpu will start.", false);
+            
+            setTimeout(() => {
+                if (typeof computerTurn === 'function') computerTurn();
+            }, 800);
         } else {
-            playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
-            turnIndicator.textContent = "YOUR TURN";
-            turnIndicator.style.color = "var(--win)";
-            setSystemMessage("match restored. your turn.", false);
-            startTimer();
+            if (typeof playerInput !== 'undefined') { playerInput.disabled = false; playerInput.focus(); }
+            if (typeof submitBtn !== 'undefined') submitBtn.disabled = false; 
+            if (typeof turnIndicator !== 'undefined') {
+                turnIndicator.textContent = "YOUR TURN";
+                turnIndicator.style.color = "var(--win)";
+            }
+            if (typeof setSystemMessage === 'function') setSystemMessage("match restored. your turn.", false);
+            if (typeof startTimer === 'function') startTimer();
         }
     });
 });
