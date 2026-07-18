@@ -224,11 +224,6 @@ if (installAppBtn) {
     });
 }
 
-btnOffline.addEventListener('click', () => {
-    mainMenu.style.display = 'none';
-    offlineSetup.style.display = 'block';
-});
-
 btnOnline.addEventListener('click', () => {
     isMultiplayer = true;
     welcomeView.style.display = 'none';
@@ -238,11 +233,10 @@ btnOnline.addEventListener('click', () => {
 function returnToMainMenu() {
     const wasInGame = gameView.style.display === 'flex' || gameView.style.display === 'block';
     
-    const executeReturn = () => {
+   const executeReturn = () => {
         isMultiplayer = false;
         lobbyView.style.display = 'none';
         gameView.style.display = 'none';
-        offlineSetup.style.display = 'none';
         welcomeView.style.display = 'block';
         mainMenu.style.display = 'block';
         stopTimer();
@@ -638,7 +632,7 @@ function updateLivesDisplay() {
     yourLivesEl.textContent = '♥'.repeat(Math.max(0, lives)) + '♡'.repeat(Math.max(0, 3 - lives));
 }
 
-startOfflineBtn.addEventListener('click', () => {
+btnOffline.addEventListener('click', () => {
     isMultiplayer = false;
     rewardedAdsUsed = 0;
     welcomeView.style.display = 'none';
