@@ -132,13 +132,18 @@ const categoryDesc = {
 function updateHelpText() {
     if (!modeHelpText) return;
     modeHelpText.style.opacity = '0';
+    
     setTimeout(() => {
-        const catDisplay = currentCategory.replace(' only', '').trim();
-        modeHelpText.innerHTML = `<span style="color: var(--accent); font-weight: bold;">${currentMode} (${catDisplay}):</span> ${difficultyDesc[currentMode]} ${categoryDesc[currentCategory]}`;
+        const diffDisplay = currentMode || 'easy';
+        const catDisplay = (currentCategory || 'general').replace(' only', '').trim();
+        
+        const dText = difficultyDesc[currentMode] || difficultyDesc['easy'];
+        const cText = categoryDesc[currentCategory] || categoryDesc['general'];
+        
+        modeHelpText.innerHTML = `<span style="color: var(--accent); font-weight: bold;">${diffDisplay} (${catDisplay}):</span> ${dText} ${cText}`;
         modeHelpText.style.opacity = '1';
     }, 150);
 }
-
 function bindFastTap(element, callback) {
     if (!element) return;
     let touchHandled = false;
@@ -251,14 +256,24 @@ btnReturnMain.addEventListener('click', returnToMainMenu);
 diffTabs.forEach(tab => tab.addEventListener('click', (e) => {
     diffTabs.forEach(t => t.classList.remove('active')); 
     e.currentTarget.classList.add('active');
-    currentMode = e.currentTarget.getAttribute('data-mode') || 'easy'; 
+    
+    // grabs from data-mode, falls back to reading the button's text if the attribute is missing
+    let val = e.currentTarget.getAttribute('data-mode');
+    if (!val) val = e.currentTarget.textContent.toLowerCase().trim();
+    
+    currentMode = val; 
     updateHelpText();
 }));
 
 catTabs.forEach(tab => tab.addEventListener('click', (e) => {
     catTabs.forEach(t => t.classList.remove('active')); 
     e.currentTarget.classList.add('active');
-    currentCategory = e.currentTarget.getAttribute('data-category') || 'general'; 
+    
+    // grabs from data-category, falls back to reading the button's text if the attribute is missing
+    let val = e.currentTarget.getAttribute('data-category');
+    if (!val) val = e.currentTarget.textContent.toLowerCase().replace(' only', '').trim();
+    
+    currentCategory = val; 
     updateHelpText();
 }));
 
