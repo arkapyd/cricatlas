@@ -516,7 +516,8 @@ async function handleTimeout() {
     }
 }
 
-const tabBtns = document.querySelectorAll('.tab-btn');
+// :not() ensures the career tab logic ignores your engine selection buttons
+const tabBtns = document.querySelectorAll('.tab-btn:not(.diff-btn):not(.cat-btn)');
 const tabPanes = document.querySelectorAll('.tab-pane');
 
 tabBtns.forEach(btn => {
@@ -528,13 +529,18 @@ tabBtns.forEach(btn => {
         });
         
         btn.classList.add('active');
+        
+        // added safety checks so it doesn't crash if a button lacks a target
         const targetId = btn.getAttribute('data-target');
-        const targetPane = document.getElementById(targetId);
-        targetPane.classList.remove('hide-element');
-        targetPane.classList.add('active-pane');
+        if (targetId) {
+            const targetPane = document.getElementById(targetId);
+            if (targetPane) {
+                targetPane.classList.remove('hide-element');
+                targetPane.classList.add('active-pane');
+            }
+        }
     });
 });
-
 const careerTiers = [
     { name: "gully cricketer", threshold: 0 },
     { name: "school cricketer", threshold: 50 },
