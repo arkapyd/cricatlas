@@ -1238,34 +1238,50 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     return { full, initials, givenNames, isMulti: givenNames.length > 1 };
 }
 const exitGameBtn = document.getElementById('exit-game-btn');
+const forfeitModal = document.getElementById('forfeit-modal');
+const modalCancelBtn = document.getElementById('modal-cancel-btn');
+const modalConfirmBtn = document.getElementById('modal-confirm-btn');
 
+// opens the custom modal when exit is clicked
 if (exitGameBtn) {
     exitGameBtn.addEventListener('click', () => {
-        const confirmForfeit = confirm("⚠️ danger: exiting now will forfeit all cp earned during this match! are you sure you want to quit?");
+        forfeitModal.classList.remove('hide-element');
+    });
+}
+
+// closes the modal and resumes the game if they cancel
+if (modalCancelBtn) {
+    modalCancelBtn.addEventListener('click', () => {
+        forfeitModal.classList.add('hide-element');
+    });
+}
+
+// executes the forfeit logic if they confirm
+if (modalConfirmBtn) {
+    modalConfirmBtn.addEventListener('click', () => {
+        forfeitModal.classList.add('hide-element');
         
-        if (confirmForfeit) {
-            // clear saved state so they cannot resume the match later
-            if (typeof localStorage !== 'undefined') {
-                localStorage.removeItem('offline_game_state');
-            }
-            
-            // clear running timers
-            if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
-            
-            // reset gameplay values
-            score = 0;
-            lives = 3;
-            usedPlayers.clear();
-            
-            // fire your existing main menu transition function
-            if (typeof executeReturn === 'function') {
-                executeReturn();
-            } else {
-                // fallback UI clean switch if executeReturn is out of scope
-                document.getElementById('game-view').style.display = 'none';
-                document.getElementById('welcome-view').style.display = 'block';
-                document.getElementById('main-menu').style.display = 'block';
-            }
+        // clear saved state so they cannot resume the match later
+        if (typeof localStorage !== 'undefined') {
+            localStorage.removeItem('offline_game_state');
+        }
+        
+        // clear running timers
+        if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
+        
+        // reset gameplay values
+        score = 0;
+        lives = 3;
+        if (typeof usedPlayers !== 'undefined') usedPlayers.clear();
+        
+        // fire your existing main menu transition function
+        if (typeof executeReturn === 'function') {
+            executeReturn();
+        } else {
+            // fallback UI clean switch if executeReturn is out of scope
+            document.getElementById('game-view').style.display = 'none';
+            document.getElementById('welcome-view').style.display = 'block';
+            document.getElementById('main-menu').style.display = 'block';
         }
     });
 }
