@@ -130,18 +130,38 @@ const categoryDesc = {
 };
 
 function updateHelpText() {
-    if (!modeHelpText) return;
-    modeHelpText.style.opacity = '0';
+    // attempts to find the element normally
+    let helpBox = document.getElementById('mode-help-text');
+    
+    // fallback: if the ID is missing/wrong in index.html, it hunts down the div containing the default text
+    if (!helpBox) {
+        const allDivs = document.querySelectorAll('div');
+        for (const d of allDivs) {
+            if (d.textContent.includes('easy (general):')) {
+                helpBox = d;
+                helpBox.id = 'mode-help-text'; // patch the id for future clicks
+                break;
+            }
+        }
+    }
+
+    if (!helpBox) {
+        console.error("error: could not locate the help text box in the html.");
+        return;
+    }
+
+    // strips out "only" so the dictionary lookup always works, whether from data-attr or html text
+    const safeMode = (currentMode || 'easy').toLowerCase().trim();
+    const safeCat = (currentCategory || 'general').toLowerCase().replace(' only', '').trim();
+
+    const dText = difficultyDesc[safeMode] || difficultyDesc['easy'];
+    const cText = categoryDesc[safeCat] || categoryDesc['general'];
+    
+    helpBox.style.opacity = '0';
     
     setTimeout(() => {
-        const diffDisplay = currentMode || 'easy';
-        const catDisplay = (currentCategory || 'general').replace(' only', '').trim();
-        
-        const dText = difficultyDesc[currentMode] || difficultyDesc['easy'];
-        const cText = categoryDesc[currentCategory] || categoryDesc['general'];
-        
-        modeHelpText.innerHTML = `<span style="color: var(--accent); font-weight: bold;">${diffDisplay} (${catDisplay}):</span> ${dText} ${cText}`;
-        modeHelpText.style.opacity = '1';
+        helpBox.innerHTML = `<span style="color: var(--accent); font-weight: bold;">${safeMode} (${safeCat}):</span> ${dText} ${cText}`;
+        helpBox.style.opacity = '1';
     }, 150);
 }
 function bindFastTap(element, callback) {
