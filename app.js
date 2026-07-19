@@ -1176,7 +1176,9 @@ async function handleMoveWrapper() {
             targetSearchQuery = matchedCatalogPlayers[0].unique_name || matchedCatalogPlayers[0].name;
         }
     } else {
-        if (inputParts.length < 2 || inputParts[0].length === 1) {
+        // only punish initials if the player is NOT in easy mode.
+        // if they are in easy mode, this allows the initial to pass through to the wikipedia fallback.
+        if (currentMode !== 'easy' && (inputParts.length < 2 || inputParts[0].length === 1)) {
             punishLogic(`initials not allowed in ${currentMode} mode. use full first name.`);
             return;
         }
