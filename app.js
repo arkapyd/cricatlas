@@ -1260,52 +1260,31 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     
     return { full, initials, givenNames, isMulti: givenNames.length > 1 };
 }
-const exitGameBtn = document.getElementById('exit-game-btn');
-const forfeitModal = document.getElementById('forfeit-modal');
-const modalCancelBtn = document.getElementById('modal-cancel-btn');
-const modalConfirmBtn = document.getElementById('modal-confirm-btn');
+const topExitBtn = document.getElementById('exit-game-btn');
 
-// opens the custom modal when exit is clicked
-if (exitGameBtn) {
-    exitGameBtn.addEventListener('click', () => {
-        forfeitModal.classList.remove('hide-element');
-    });
-}
-
-// closes the modal and resumes the game if they cancel
-if (modalCancelBtn) {
-    modalCancelBtn.addEventListener('click', () => {
-        forfeitModal.classList.add('hide-element');
-    });
-}
-
-// executes the forfeit logic if they confirm
-if (modalConfirmBtn) {
-    modalConfirmBtn.addEventListener('click', () => {
-        forfeitModal.classList.add('hide-element');
-        
-        // clear saved state so they cannot resume the match later
-        if (typeof localStorage !== 'undefined') {
-            localStorage.removeItem('offline_game_state');
-        }
-        
-        // clear running timers
-        if (typeof timerInterval !== 'undefined') clearInterval(timerInterval);
-        
-        // reset gameplay values
-        score = 0;
-        lives = 3;
-        if (typeof usedPlayers !== 'undefined') usedPlayers.clear();
-        
-        // fire your existing main menu transition function
-        if (typeof executeReturn === 'function') {
-            executeReturn();
+if (topExitBtn) {
+    topExitBtn.addEventListener('click', () => {
+        // 1. handle multiplayer formal surrender
+        if (isMultiplayer && gameRef && currentUser) {
+            gameRef.once('value').then(snap => {
+                const game = snap.val();
+                if (game && game.status !== 'finished') {
+                    const isP1 = game.p1.uid === currentUser.uid;
+                    const oppUid = isP1 ? (game.p2 ? game.p2.uid : null) : game.p1.uid;
+                    if (oppUid) {
+                        gameRef.update({ status: 'finished', winner: oppUid, [`${isP1 ? 'p1' : 'p2'}/lives`]: 0 });
+                    } else {
+                        gameRef.update({ status: 'finished' });
+                    }
+                }
+            });
         } else {
-            // fallback UI clean switch if executeReturn is out of scope
-            document.getElementById('game-view').style.display = 'none';
-            document.getElementById('welcome-view').style.display = 'block';
-            document.getElementById('main-menu').style.display = 'block';
+            // 2. clear offline save so you don't resume a bailed game
+            localStorage.removeItem('atlas_offline_save');
         }
+        
+        // 3. instantly execute your existing clean-up and menu transition
+        returnToMainMenu();
     });
 }
 async function resolveFullName(queryName) {
