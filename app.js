@@ -2,6 +2,31 @@ if ('serviceWorker' in navigator) {
     navigator.serviceWorker.register('./sw.js').catch(err => console.log('service worker failed', err));
 }
 
+// audio setup
+const clickSound = new Audio('audio/ui_click.mp3');
+const correctSound = new Audio('audio/bat_hit.mp3');
+const wrongSound = new Audio('audio/crowd_groan.mp3');
+
+correctSound.volume = 0.7;
+wrongSound.volume = 0.7;
+
+function playSound(audioElement) {
+    audioElement.currentTime = 0;
+    audioElement.play().catch(err => console.log('audio playback blocked until user interaction', err));
+}
+
+function muteGameAudio() {
+    clickSound.muted = true;
+    correctSound.muted = true;
+    wrongSound.muted = true;
+}
+
+function unmuteGameAudio() {
+    clickSound.muted = false;
+    correctSound.muted = false;
+    wrongSound.muted = false;
+}
+
 // update with your actual firebase keys
 const firebaseConfig = {
   apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
@@ -130,16 +155,14 @@ const categoryDesc = {
 };
 
 function updateHelpText() {
-    // attempts to find the element normally
     let helpBox = document.getElementById('mode-help-text');
     
-    // fallback: if the ID is missing/wrong in index.html, it hunts down the div containing the default text
     if (!helpBox) {
         const allDivs = document.querySelectorAll('div');
         for (const d of allDivs) {
             if (d.textContent.includes('easy (general):')) {
                 helpBox = d;
-                helpBox.id = 'mode-help-text'; // patch the id for future clicks
+                helpBox.id = 'mode-help-text';
                 break;
             }
         }
@@ -150,7 +173,6 @@ function updateHelpText() {
         return;
     }
 
-    // strips out "only" so the dictionary lookup always works, whether from data-attr or html text
     const safeMode = (currentMode || 'easy').toLowerCase().trim();
     const safeCat = (currentCategory || 'general').toLowerCase().replace(' only', '').trim();
 
@@ -164,6 +186,7 @@ function updateHelpText() {
         helpBox.style.opacity = '1';
     }, 150);
 }
+
 function bindFastTap(element, callback) {
     if (!element) return;
     let touchHandled = false;
@@ -202,8 +225,15 @@ auth.onAuthStateChanged(user => {
     }
 });
 
-loginBtn.addEventListener('click', () => auth.signInWithPopup(new firebase.auth.GoogleAuthProvider()));
-logoutBtn.addEventListener('click', () => auth.signOut());
+loginBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    auth.signInWithPopup(new firebase.auth.GoogleAuthProvider());
+});
+
+logoutBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    auth.signOut();
+});
 
 window.addEventListener('beforeinstallprompt', (e) => {
     e.preventDefault();
@@ -213,6 +243,7 @@ window.addEventListener('beforeinstallprompt', (e) => {
 
 if (installAppBtn) {
     installAppBtn.addEventListener('click', async () => {
+        playSound(clickSound);
         if (deferredPrompt) {
             deferredPrompt.prompt();
             const { outcome } = await deferredPrompt.userChoice;
@@ -225,6 +256,7 @@ if (installAppBtn) {
 }
 
 btnOnline.addEventListener('click', () => {
+    playSound(clickSound);
     isMultiplayer = true;
     welcomeView.style.display = 'none';
     lobbyView.style.display = 'flex';
@@ -233,7 +265,7 @@ btnOnline.addEventListener('click', () => {
 function returnToMainMenu() {
     const wasInGame = gameView.style.display === 'flex' || gameView.style.display === 'block';
     
-   const executeReturn = () => {
+    const executeReturn = () => {
         isMultiplayer = false;
         lobbyView.style.display = 'none';
         gameView.style.display = 'none';
@@ -253,8 +285,14 @@ function returnToMainMenu() {
             window.adBreak({
                 type: 'next',
                 name: 'interstitial_ad',
-                beforeAd: () => { stopTimer(); },
-                afterAd: () => { executeReturn(); }
+                beforeAd: () => { 
+                    muteGameAudio();
+                    stopTimer(); 
+                },
+                afterAd: () => { 
+                    unmuteGameAudio();
+                    executeReturn(); 
+                }
             });
             return;
         }
@@ -263,12 +301,12 @@ function returnToMainMenu() {
     executeReturn();
 }
 
-btnBackMain.addEventListener('click', returnToMainMenu);
-btnBackLobby.addEventListener('click', returnToMainMenu);
-btnReturnMain.addEventListener('click', returnToMainMenu);
+btnBackMain.addEventListener('click', () => { playSound(clickSound); returnToMainMenu(); });
+btnBackLobby.addEventListener('click', () => { playSound(clickSound); returnToMainMenu(); });
+btnReturnMain.addEventListener('click', () => { playSound(clickSound); returnToMainMenu(); });
 
-// engine selection listeners
 diffTabs.forEach(tab => tab.addEventListener('click', (e) => {
+    playSound(clickSound);
     diffTabs.forEach(t => t.classList.remove('active')); 
     e.currentTarget.classList.add('active');
     
@@ -280,6 +318,7 @@ diffTabs.forEach(tab => tab.addEventListener('click', (e) => {
 }));
 
 catTabs.forEach(tab => tab.addEventListener('click', (e) => {
+    playSound(clickSound);
     catTabs.forEach(t => t.classList.remove('active')); 
     e.currentTarget.classList.add('active');
     
@@ -292,18 +331,21 @@ catTabs.forEach(tab => tab.addEventListener('click', (e) => {
 
 if (leaveGameBtn) {
     leaveGameBtn.addEventListener('click', () => {
+        playSound(clickSound);
         leaveConfirmModal.classList.remove('hide-element');
     });
 }
 
 if (leaveNoBtn) {
     leaveNoBtn.addEventListener('click', () => {
+        playSound(clickSound);
         leaveConfirmModal.classList.add('hide-element');
     });
 }
 
 if (leaveYesBtn) {
     leaveYesBtn.addEventListener('click', async () => {
+        playSound(clickSound);
         leaveConfirmModal.classList.add('hide-element');
         if (isMultiplayer) {
             const snap = await gameRef.once('value');
@@ -442,7 +484,6 @@ function triggerGameOver(isMultiplayerDefeat = false, oppUid = null) {
     gameOverPanel.classList.remove('hide-element');
     localStorage.removeItem('atlas_offline_save');
 
-    // state-check: if you still have lives offline, it means the cpu died.
     if (!isMultiplayerDefeat && lives > 0) {
         if (reviveContainer) reviveContainer.classList.add('hide-element');
         finalizeGameOver(isMultiplayerDefeat, oppUid);
@@ -469,14 +510,24 @@ async function finalizeGameOver(isOnline, oppUid) {
 
 if (rewardAdBtn) {
     rewardAdBtn.addEventListener('click', () => {
+        playSound(clickSound);
         window.adBreak({
             type: 'reward',
             name: 'extra_life',
-            beforeAd: () => { stopTimer(); },
-            afterAd: () => {},
+            beforeAd: () => { 
+                muteGameAudio();
+                stopTimer(); 
+            },
+            afterAd: () => {
+                unmuteGameAudio();
+            },
             beforeReward: (showAdFn) => { showAdFn(); },
-            adDismissed: () => { setSystemMessage("ad skipped. no revive.", true); },
+            adDismissed: () => { 
+                unmuteGameAudio();
+                setSystemMessage("ad skipped. no revive.", true); 
+            },
             adViewed: async () => {
+                unmuteGameAudio();
                 rewardedAdsUsed++;
                 lives = 1;
                 updateLivesDisplay();
@@ -511,6 +562,7 @@ if (rewardAdBtn) {
 
 if (declineReviveBtn) {
     declineReviveBtn.addEventListener('click', () => {
+        playSound(clickSound);
         const isOnline = reviveContainer.dataset.isOnline === 'true';
         const oppUid = reviveContainer.dataset.oppUid;
         finalizeGameOver(isOnline, oppUid);
@@ -518,6 +570,7 @@ if (declineReviveBtn) {
 }
 
 async function handleTimeout() {
+    playSound(wrongSound);
     if (isMultiplayer) {
         const snap = await gameRef.once('value');
         const game = snap.val();
@@ -548,12 +601,12 @@ async function handleTimeout() {
     }
 }
 
-// :not() ensures the career tab logic ignores your engine selection buttons
 const tabBtns = document.querySelectorAll('.tab-btn:not(.diff-btn):not(.cat-btn)');
 const tabPanes = document.querySelectorAll('.tab-pane');
 
 tabBtns.forEach(btn => {
     btn.addEventListener('click', () => {
+        playSound(clickSound);
         tabBtns.forEach(b => b.classList.remove('active'));
         tabPanes.forEach(p => {
             p.classList.remove('active-pane');
@@ -562,7 +615,6 @@ tabBtns.forEach(btn => {
         
         btn.classList.add('active');
         
-        // added safety checks so it doesn't crash if a button lacks a target
         const targetId = btn.getAttribute('data-target');
         if (targetId) {
             const targetPane = document.getElementById(targetId);
@@ -573,6 +625,7 @@ tabBtns.forEach(btn => {
         }
     });
 });
+
 const careerTiers = [
     { name: "gully cricketer", threshold: 0 },
     { name: "school cricketer", threshold: 50 },
@@ -637,10 +690,10 @@ function updateLivesDisplay() {
 }
 
 btnOffline.addEventListener('click', () => {
+    playSound(clickSound);
     isMultiplayer = false;
     rewardedAdsUsed = 0;
     
-    // 1. strict normalization: translate ui abbreviations back to engine keywords
     const modeMap = { 'med': 'medium', 'medium': 'medium', 'hard': 'hard', 'easy': 'easy' };
     const catMap = { 'gen': 'general', 'general': 'general', 'intl': 'international', 'international': 'international', 'dom': 'domestic', 'domestic': 'domestic', 'men': 'men', 'wmn': 'women', 'women': 'women' };
     
@@ -681,7 +734,7 @@ btnOffline.addEventListener('click', () => {
         const matchesSelectedCategory = (player, cat) => {
             if (cat === 'general') return true;
             
-            const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || '')).toLowerCase();
+            const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || biorg || '')).toLowerCase();
             const pName = (player.name || '').toLowerCase();
             
             if (pName.includes('chakravarthy') || pName.includes('chakaravarthy')) {
@@ -718,7 +771,6 @@ btnOffline.addEventListener('click', () => {
             is_international: p.is_international || p.international || false
         })).filter(p => p.name && matchesSelectedCategory(p, currentCategory));
 
-        // 2. fail-safe: if db lacks tags and removes everyone, fallback to general pool so the game doesn't crash
         if (filteredPool.length === 0) {
             console.warn(`[engine warning] category filter for '${currentCategory}' resulted in 0 players. overriding back to general pool.`);
             filteredPool = rawArray.map(p => ({
@@ -768,7 +820,6 @@ async function computerTurn() {
     let selected, trueFullName, extract, finalPlayName;
     let foundValid = false;
 
-    // loop until a valid candidate is found instead of artificially giving up after 25 tries
     while (validCandidates.length > 0 && !foundValid) {
         selected = validCandidates.splice(Math.floor(Math.random() * validCandidates.length), 1)[0];
         
@@ -779,8 +830,6 @@ async function computerTurn() {
 
         if (currentMode === 'medium' && wikiData.isUnresolved && (formats.givenNames[0]||"").length <= 2) continue; 
         if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && (formats.givenNames[0]||"").length <= 2) continue; 
-
-        // removed the scanDemographics re-check entirely because playersCatalog is already filtered.
 
         let tempPlayName = currentMode === 'medium' ? formats.full : (currentMode === 'hard' ? (Math.random() > 0.5 ? formats.initials : formats.full) : selected.name);
         if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
@@ -812,6 +861,7 @@ async function computerTurn() {
 }
 
 findMatchBtn.addEventListener('click', () => {
+    playSound(clickSound);
     findMatchBtn.disabled = true; 
     findMatchBtn.textContent = 'SEARCHING...';
     lobbyStatus.textContent = 'connecting to global ranked arena...';
@@ -878,6 +928,7 @@ findMatchBtn.addEventListener('click', () => {
 
 if (btnCreatePrivate) {
     btnCreatePrivate.addEventListener('click', () => {
+        playSound(clickSound);
         btnCreatePrivate.disabled = true;
         lobbyStatus.textContent = 'generating secure match code...';
         
@@ -928,6 +979,7 @@ if (btnCreatePrivate) {
 
 if (btnJoinPrivate) {
     btnJoinPrivate.addEventListener('click', () => {
+        playSound(clickSound);
         const code = privateCodeInput.value.trim();
         if (!code || code.length !== 4) { lobbyStatus.textContent = 'enter a valid 4-digit code.'; return; }
         
@@ -1058,7 +1110,12 @@ function renderOnlineState(game, amIP1) {
 }
 
 bindFastTap(submitBtn, handleMoveWrapper);
-playerInput.addEventListener('keypress', (e) => { if (e.key === 'Enter') handleMoveWrapper(); });
+playerInput.addEventListener('keypress', (e) => { 
+    if (e.key === 'Enter') {
+        playSound(clickSound);
+        handleMoveWrapper(); 
+    }
+});
 
 async function handleMoveWrapper() {
     if (isMultiplayer && !isMyTurn) return;
@@ -1134,6 +1191,10 @@ async function handleMoveWrapper() {
     if (!extract || !extract.toLowerCase().includes("cricket")) { punishLogic(`could not verify '${inputName}' as a cricketer.`); return; }
 
     const demo = scanDemographics(extract);
+    
+    // play correct chime right before processing state change
+    playSound(correctSound);
+    
     const earnedCP = isRanked ? await awardCP(extract, demo) : 0;
 
     if (isMultiplayer) {
@@ -1152,6 +1213,7 @@ async function handleMoveWrapper() {
 }
 
 async function punishLogic(reason) {
+    playSound(wrongSound);
     if (isMultiplayer) {
         const snap = await gameRef.once('value');
         const game = snap.val();
@@ -1260,11 +1322,12 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
     
     return { full, initials, givenNames, isMulti: givenNames.length > 1 };
 }
+
 const topExitBtn = document.getElementById('exit-game-btn');
 
 if (topExitBtn) {
     topExitBtn.addEventListener('click', () => {
-        // 1. handle multiplayer formal surrender
+        playSound(clickSound);
         if (isMultiplayer && gameRef && currentUser) {
             gameRef.once('value').then(snap => {
                 const game = snap.val();
@@ -1279,14 +1342,13 @@ if (topExitBtn) {
                 }
             });
         } else {
-            // 2. clear offline save so you don't resume a bailed game
             localStorage.removeItem('atlas_offline_save');
         }
         
-        // 3. instantly execute your existing clean-up and menu transition
         returnToMainMenu();
     });
 }
+
 async function resolveFullName(queryName) {
     const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=5&prop=extracts&exintro=1&explaintext=1`)).json();
     
@@ -1296,7 +1358,6 @@ async function resolveFullName(queryName) {
     const queryGiven = queryParts.slice(0, -1).join(' ');
 
     try {
-        // phase 1: robust wikipedia search
         let data = await fetchWiki(encodeURIComponent(`intitle:"${queryName}" cricketer`));
         let pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
         if (pages.length === 0) { 
@@ -1320,7 +1381,6 @@ async function resolveFullName(queryName) {
             const normTitleSurname = titleSurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const normQuerySurname = querySurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-            // expanded keyword list to catch players whose intro paragraph misses the exact word "cricket"
             const hasCricketKeywords = extractLower.includes("cricket") || extractLower.includes("batsman") || extractLower.includes("bowler") || extractLower.includes("wicket-keeper");
 
             if (hasCricketKeywords && normTitleSurname === normQuerySurname) {
@@ -1331,10 +1391,8 @@ async function resolveFullName(queryName) {
             }
         }
 
-        // phase 2: espncricinfo fallback via public cors proxy
         try {
             const ciSearchUrl = `https://search.espncricinfo.com/ci/content/site/search.html?search=${encodeURIComponent(queryName)}&type=player`;
-            // using allorigins as a bridge to bypass client-side cors blocks
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ciSearchUrl)}`;
             
             const ciResponse = await fetch(proxyUrl);
@@ -1342,10 +1400,8 @@ async function resolveFullName(queryName) {
                 const ciData = await ciResponse.json();
                 const htmlText = ciData.contents.toLowerCase();
                 
-                // espncricinfo player search results load specific html classes if a profile is found
                 if (htmlText.includes("player-style") || htmlText.includes("class=\"player-name\"")) {
                     console.log(`[engine] ${queryName} verified via espncricinfo fallback.`);
-                    // synthetic extract ensures scanDemographics and awardCP don't crash
                     const syntheticExtract = `${queryName} is a verified cricketer verified via the espncricinfo database fallback.`;
                     return { resolved: queryNameLower, extract: syntheticExtract, isUnresolved: false };
                 }
@@ -1358,6 +1414,5 @@ async function resolveFullName(queryName) {
         console.error("[engine] wiki fetch error:", e); 
     }
     
-    // phase 3: total verification failure
     return { resolved: queryNameLower, extract: null, isUnresolved: true };
 }
