@@ -1310,7 +1310,14 @@ if (modalConfirmBtn) {
 }
 async function resolveFullName(queryName) {
     const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=5&prop=extracts&exintro=1&explaintext=1`)).json();
+    
+    const queryNameLower = queryName.trim().toLowerCase();
+    const queryParts = queryNameLower.split(/\s+/);
+    const querySurname = queryParts[queryParts.length - 1];
+    const queryGiven = queryParts.slice(0, -1).join(' ');
+
     try {
+        // phase 1: robust wikipedia search
         let data = await fetchWiki(encodeURIComponent(`intitle:"${queryName}" cricketer`));
         let pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
         if (pages.length === 0) { 
@@ -1318,11 +1325,6 @@ async function resolveFullName(queryName) {
             pages = data.query && data.query.pages ? Object.values(data.query.pages) : []; 
         }
         
-        const queryNameLower = queryName.trim().toLowerCase();
-        const queryParts = queryNameLower.split(/\s+/);
-        const querySurname = queryParts[queryParts.length - 1];
-        const queryGiven = queryParts.slice(0, -1).join(' ');
-
         for (let pageData of pages) {
             if (pageData.title.toLowerCase().includes("(disambiguation)")) continue;
             
@@ -1339,13 +1341,44 @@ async function resolveFullName(queryName) {
             const normTitleSurname = titleSurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
             const normQuerySurname = querySurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
 
-            if (extractLower.includes("cricket") && normTitleSurname === normQuerySurname) {
+            // expanded keyword list to catch players whose intro paragraph misses the exact word "cricket"
+            const hasCricketKeywords = extractLower.includes("cricket") || extractLower.includes("batsman") || extractLower.includes("bowler") || extractLower.includes("wicket-keeper");
+
+            if (hasCricketKeywords && normTitleSurname === normQuerySurname) {
                 if (titleGiven.startsWith(queryGiven) || queryGiven.startsWith(titleGiven)) {
                     const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
                     return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
                 }
             }
         }
-    } catch (e) { console.error("wiki error:", e); }
-    return { resolved: queryName.toLowerCase(), extract: null, isUnresolved: true };
+
+        // phase 2: espncricinfo fallback via public cors proxy
+        try {
+            const ciSearchUrl = `https://search.espncricinfo.com/ci/content/site/search.html?search=${encodeURIComponent(queryName)}&type=player`;
+            // using allorigins as a bridge to bypass client-side cors blocks
+            const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ciSearchUrl)}`;
+            
+            const ciResponse = await fetch(proxyUrl);
+            if (ciResponse.ok) {
+                const ciData = await ciResponse.json();
+                const htmlText = ciData.contents.toLowerCase();
+                
+                // espncricinfo player search results load specific html classes if a profile is found
+                if (htmlText.includes("player-style") || htmlText.includes("class=\"player-name\"")) {
+                    console.log(`[engine] ${queryName} verified via espncricinfo fallback.`);
+                    // synthetic extract ensures scanDemographics and awardCP don't crash
+                    const syntheticExtract = `${queryName} is a verified cricketer verified via the espncricinfo database fallback.`;
+                    return { resolved: queryNameLower, extract: syntheticExtract, isUnresolved: false };
+                }
+            }
+        } catch (ciErr) {
+            console.warn("[engine] cricinfo fallback ping failed:", ciErr);
+        }
+
+    } catch (e) { 
+        console.error("[engine] wiki fetch error:", e); 
+    }
+    
+    // phase 3: total verification failure
+    return { resolved: queryNameLower, extract: null, isUnresolved: true };
 }
