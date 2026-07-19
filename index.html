@@ -30,6 +30,23 @@
        window.adsbygoogle = window.adsbygoogle || [];
        window.adBreak = window.adConfig = function(o) { adsbygoogle.push(o); };
     </script>
+
+    <!-- Google AdSense for H5 Games -->
+    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
+
+<!-- Initialize the adBreak API -->
+<script>
+  window.adsbygoogle = window.adsbygoogle || [];
+  const adBreak = window.adConfig = function(o) {adsbygoogle.push(o);}
+  
+  adConfig({
+    preloadAdBreaks: 'on',
+    sound: 'on', // Tells the ad if your game currently has sound on/off
+    onReady: () => {
+      console.log("H5 Ad API is ready.");
+    }
+  });
+</script>
 </head>
 <body>
     <div id="app-container">
