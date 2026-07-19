@@ -38,7 +38,7 @@
         <div id="auth-view" class="view active">
             <div class="hero">
                 <h1>CRICKET ATLAS</h1>
-                <p>the infinite name chain engine.</p>
+                <p>the (seemingly) infinite cricket names engine</p>
             </div>
             <div class="center-card">
                 <button id="google-login-btn" class="primary-btn">SIGN IN WITH GOOGLE</button>
@@ -192,6 +192,7 @@
                 <div class="player-stat-block opponent">
                     <span class="stat-name" id="opponent-name">OPPONENT</span>
                     <span class="lives-value" id="opponent-lives" style="display: none;">♥♥♥</span>
+                    <button id="exit-game-btn" class="exit-btn">exit game</button>
                 </div>
                 <div class="center-stats">
                     <div class="vs-badge">VS</div>
@@ -201,7 +202,7 @@
                     <span class="stat-name">YOU</span>
                     <span class="lives-value" id="your-lives">♥♥♥</span>
                 </div>
-            </header>
+                </header>
 
             <div class="status-panel">
                 <div class="status-split">
@@ -215,7 +216,7 @@
                     </div>
                 </div>
             </div>
-            <button id="exit-game-btn" class="exit-btn">exit game</button>
+            
 
             <div id="chain-list" class="feed-container"></div>
 
@@ -229,10 +230,13 @@
 
                 <div id="game-over-panel" class="hide-element" style="margin-top: 8px;">
                     <button id="btn-return-main" class="primary-btn" style="background: var(--surface-3); color: var(--text);">RETURN TO MAIN MENU</button>
-                    <div id="revive-container" class="hide-element" style="margin-top: 15px; text-align: center;">
-                    <p style="color: var(--text-dim); margin-bottom: 10px;">out of lives! you can revive <span id="revives-left">3</span> more times.</p>
-                    <button id="reward-ad-btn" class="action-btn" style="background: var(--win); color: var(--bg); margin-bottom: 10px;">watch ad for +1 life</button>
-                    <button id="decline-revive-btn" class="action-btn" style="background: var(--bg-alt); color: var(--text-dim);">accept defeat</button>
+                    <div id="revive-container" class="hide-element">
+    <p>out of lives! you can revive <span id="revives-left">3</span> more times.</p>
+    <div class="revive-btn-group">
+        <button id="reward-ad-btn" class="btn-revive">watch ad (+1 life)</button>
+        <button id="decline-revive-btn" class="btn-defeat">accept defeat</button>
+    </div>
+</div>
                 </div>
                 </div>
             </div>
