@@ -442,7 +442,11 @@ function triggerGameOver(isMultiplayerDefeat = false, oppUid = null) {
     gameOverPanel.classList.remove('hide-element');
     localStorage.removeItem('atlas_offline_save');
 
-    if (rewardedAdsUsed < MAX_REWARDS && reviveContainer) {
+    // state-check: if you still have lives offline, it means the cpu died.
+    if (!isMultiplayerDefeat && lives > 0) {
+        if (reviveContainer) reviveContainer.classList.add('hide-element');
+        finalizeGameOver(isMultiplayerDefeat, oppUid);
+    } else if (rewardedAdsUsed < MAX_REWARDS && reviveContainer) {
         reviveContainer.classList.remove('hide-element');
         if (revivesLeftEl) revivesLeftEl.textContent = MAX_REWARDS - rewardedAdsUsed;
         reviveContainer.dataset.oppUid = oppUid || '';
@@ -764,8 +768,8 @@ async function computerTurn() {
     let selected, trueFullName, extract, finalPlayName;
     let foundValid = false;
 
-    for (let i = 0; i < 25; i++) {
-        if (validCandidates.length === 0) break;
+    // loop until a valid candidate is found instead of artificially giving up after 25 tries
+    while (validCandidates.length > 0 && !foundValid) {
         selected = validCandidates.splice(Math.floor(Math.random() * validCandidates.length), 1)[0];
         
         const wikiData = await resolveFullName(selected.unique_name || selected.name);
@@ -776,18 +780,13 @@ async function computerTurn() {
         if (currentMode === 'medium' && wikiData.isUnresolved && (formats.givenNames[0]||"").length <= 2) continue; 
         if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && (formats.givenNames[0]||"").length <= 2) continue; 
 
-        const demo = scanDemographics(extract);
-        if (currentCategory === 'intl' && !demo.isIntl) continue;
-        if (currentCategory === 'domestic' && demo.isIntl) continue;
-        if (currentCategory === 'women' && !demo.isWomen) continue;
-        if (currentCategory === 'men' && demo.isWomen) continue;
+        // removed the scanDemographics re-check entirely because playersCatalog is already filtered.
 
         let tempPlayName = currentMode === 'medium' ? formats.full : (currentMode === 'hard' ? (Math.random() > 0.5 ? formats.initials : formats.full) : selected.name);
         if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
 
         finalPlayName = tempPlayName;
         foundValid = true;
-        break;
     }
 
     if (!foundValid) {
