@@ -1148,9 +1148,9 @@ async function handleMoveWrapper() {
             const pName = p.unique_name || p.name;
             if (pName === inputName || p.full_name === inputName) return true;
             
-            const catParts = pName.split(/\s+/);
+           const catParts = pName.split(/\s+/);
             if (catParts.length >= 2 && inputParts.length >= 2) {
-                const inputGiven = inputParts.slice(0, -1).join(' ');
+                const inputGiven = inputParts.slice(0, -1).join(' ').replace(/\./g, '');
                 const inputSurname = inputParts[inputParts.length - 1];
                 const catGiven = catParts.slice(0, -1).join(' ');
                 const catSurname = catParts[catParts.length - 1];
@@ -1355,13 +1355,23 @@ async function resolveFullName(queryName) {
     const queryNameLower = queryName.trim().toLowerCase();
     const queryParts = queryNameLower.split(/\s+/);
     const querySurname = queryParts[queryParts.length - 1];
-    const queryGiven = queryParts.slice(0, -1).join(' ');
+    const queryGiven = queryParts.slice(0, -1).join(' ').replace(/\./g, '');
 
     try {
-        let data = await fetchWiki(encodeURIComponent(`intitle:"${queryName}" cricketer`));
+        let searchString1 = `intitle:"${queryName}" cricketer`;
+        let searchString2 = `${queryName} cricketer`;
+        
+        // if easy mode and input is an initial (e.g., "i jaggi"), drop the initial from the search query 
+        // so wiki finds the surname, then the validation loop matches the initial to the real first name.
+        if (currentMode === 'easy' && queryParts.length >= 2 && queryGiven.length <= 2) {
+            searchString1 = `intitle:"${querySurname}" cricketer`;
+            searchString2 = `${querySurname} cricketer`;
+        }
+
+        let data = await fetchWiki(encodeURIComponent(searchString1));
         let pages = data.query && data.query.pages ? Object.values(data.query.pages) : [];
         if (pages.length === 0) { 
-            data = await fetchWiki(encodeURIComponent(`${queryName} cricketer`)); 
+            data = await fetchWiki(encodeURIComponent(searchString2)); 
             pages = data.query && data.query.pages ? Object.values(data.query.pages) : []; 
         }
         
