@@ -28,22 +28,11 @@
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-database-compat.js"></script>
 
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-YOUR_PUBLISHER_ID" crossorigin="anonymous"></script>
-    <script>
-       window.adsbygoogle = window.adsbygoogle || [];
-       window.adBreak = window.adConfig = function(o) { adsbygoogle.push(o); };
-    </script>
-
-    <!-- Google AdSense for H5 Games -->
-    <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
-
-    <script async data-adtest="on" src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-XXXXXXXXXXXXXXXX" crossorigin="anonymous"></script>
-
 <!-- Initialize the adBreak API -->
 <script>
   window.adsbygoogle = window.adsbygoogle || [];
-  const adBreak = window.adConfig = function(o) {adsbygoogle.push(o);}
-  
+  window.adBreak = window.adConfig = function(o) { adsbygoogle.push(o); };
+
   adConfig({
     preloadAdBreaks: 'on',
     sound: 'on', // Tells the ad if your game currently has sound on/off
