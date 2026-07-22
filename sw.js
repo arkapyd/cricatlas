@@ -1,4 +1,4 @@
-const CACHE_NAME = 'atlas-cache-v3';
+const CACHE_NAME = 'atlas-cache-v4';
 const ASSETS = [
     './',
     './index.html',
@@ -18,7 +18,13 @@ const ASSETS = [
 
 self.addEventListener('install', event => {
     event.waitUntil(
-        caches.open(CACHE_NAME).then(cache => cache.addAll(ASSETS))
+        caches.open(CACHE_NAME).then(cache =>
+            // cache each asset independently: a single 404 (e.g. a missing icon
+            // or audio file) must not fail the whole install like cache.addAll does.
+            Promise.allSettled(ASSETS.map(url =>
+                cache.add(url).catch(err => console.warn('[sw] skipped caching', url, err))
+            ))
+        )
     );
     self.skipWaiting();
 });
