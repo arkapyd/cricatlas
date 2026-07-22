@@ -734,7 +734,7 @@ btnOffline.addEventListener('click', () => {
         const matchesSelectedCategory = (player, cat) => {
             if (cat === 'general') return true;
             
-            const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || biorg || '')).toLowerCase();
+            const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || '')).toLowerCase();
             const pName = (player.name || '').toLowerCase();
             
             if (pName.includes('chakravarthy') || pName.includes('chakaravarthy')) {
