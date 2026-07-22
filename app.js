@@ -998,18 +998,21 @@ async function computerTurn() {
     let attempts = 0;
     const MAX_ATTEMPTS = 30; 
 
+    // cap each individual lookup so one slow/hung request can't swallow the
+    // whole shot clock (the old code handed the first attempt the entire budget).
+    const PER_ATTEMPT_MS = 6000;
+
     while (pool.length > 0 && !foundValid && attempts < MAX_ATTEMPTS) {
-        if (Date.now() >= deadline) { timedOut = true; break; }
+        if (enforceClock && Date.now() >= deadline) { timedOut = true; break; }
         selected = pool.shift();
         attempts++;
 
-        let wikiData;
-        if (enforceClock) {
-            wikiData = await withDeadline(resolveFullName(selected.unique_name || selected.name), deadline - Date.now());
-            if (wikiData.__timeout) { timedOut = true; break; }
-        } else {
-            wikiData = await resolveFullName(selected.unique_name || selected.name);
-        }
+        let perAttempt = PER_ATTEMPT_MS;
+        if (enforceClock) perAttempt = Math.min(perAttempt, deadline - Date.now());
+        // fast=true skips the slow espncricinfo proxy fallback for the cpu
+        const wikiData = await withDeadline(resolveFullName(selected.unique_name || selected.name, true), perAttempt);
+        if (wikiData.__timeout) continue; // this candidate was too slow — try the next
+
         trueFullName = wikiData.resolved;
         extract = wikiData.extract;
 
@@ -1596,7 +1599,7 @@ if (topExitBtn) {
     });
 }
 
-async function resolveFullName(queryName) {
+async function resolveFullName(queryName, fast = false) {
     const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=10&prop=extracts&exintro=1&explaintext=1`)).json();
     
     const queryNameLower = queryName.trim().toLowerCase();
@@ -1661,7 +1664,9 @@ async function resolveFullName(queryName) {
             }
         }
 
-        try {
+        // the espncricinfo proxy (via allorigins) is slow and can hang; skip it
+        // in fast mode so the cpu's per-attempt budget isn't wasted on it.
+        if (!fast) try {
             const ciSearchUrl = `https://search.espncricinfo.com/ci/content/site/search.html?search=${encodeURIComponent(queryName)}&type=player`;
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ciSearchUrl)}`;
             
