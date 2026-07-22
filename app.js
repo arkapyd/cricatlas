@@ -459,6 +459,24 @@ function stopTimer() {
     timerDisplay.classList.remove('timer-danger');
 }
 
+// continue the turn timer from wherever it left off (used after a no-fault
+// clarification, so the player isn't handed a fresh 60s for the app's ambiguity)
+function resumeTimer() {
+    clearInterval(turnTimer);
+    if (typeof timeLeft !== 'number' || timeLeft <= 0) { startTimer(); return; }
+    timerDisplay.textContent = timeLeft;
+    timerDisplay.classList.toggle('timer-danger', timeLeft <= 10);
+    turnTimer = setInterval(() => {
+        timeLeft--;
+        timerDisplay.textContent = timeLeft;
+        if (timeLeft <= 10) timerDisplay.classList.add('timer-danger');
+        if (timeLeft <= 0) {
+            clearInterval(turnTimer);
+            handleTimeout();
+        }
+    }, 1000);
+}
+
 function triggerGameOver(isMultiplayerDefeat = false, oppUid = null) {
     stopTimer();
     playInputGroup.classList.add('hide-element');
@@ -882,6 +900,9 @@ function stopThinking() {
 // move inside the budget for the current difficulty, it forfeits and you win.
 const CPU_TIME_BUDGET = { easy: 20, medium: 35, hard: 60 };
 let cpuCountdownTimer = null;
+// the very first cpu move after a cold boot is slow (warming up network +
+// wikipedia lookups), so its shot clock is not enforced. every move after is.
+let cpuClockArmed = false;
 
 function startCpuCountdown(seconds) {
     stopCpuCountdown();
@@ -915,10 +936,13 @@ async function computerTurn() {
     startThinking();
     playerInput.disabled = true; submitBtn.disabled = true;
 
-    // cpu shot clock for this difficulty
+    // cpu shot clock — not enforced on the very first move (cold-start latency),
+    // enforced on every move after that
+    const enforceClock = cpuClockArmed;
+    cpuClockArmed = true;
     const budgetSecs = CPU_TIME_BUDGET[currentMode] || 20;
-    const deadline = Date.now() + budgetSecs * 1000;
-    startCpuCountdown(budgetSecs);
+    const deadline = enforceClock ? Date.now() + budgetSecs * 1000 : Infinity;
+    if (enforceClock) startCpuCountdown(budgetSecs);
     let timedOut = false;
 
     let pool = playersCatalog.filter(p =>
@@ -944,8 +968,13 @@ async function computerTurn() {
         selected = pool.shift();
         attempts++;
 
-        const wikiData = await withDeadline(resolveFullName(selected.unique_name || selected.name), deadline - Date.now());
-        if (wikiData.__timeout) { timedOut = true; break; }
+        let wikiData;
+        if (enforceClock) {
+            wikiData = await withDeadline(resolveFullName(selected.unique_name || selected.name), deadline - Date.now());
+            if (wikiData.__timeout) { timedOut = true; break; }
+        } else {
+            wikiData = await resolveFullName(selected.unique_name || selected.name);
+        }
         trueFullName = wikiData.resolved;
         extract = wikiData.extract;
         const formats = getNameFormats(trueFullName, wikiData.isUnresolved);
@@ -1319,7 +1348,8 @@ async function handleMoveWrapper() {
                 targetSearchQuery = exactMatch.unique_name || exactMatch.name;
                 matchedIdentifier = exactMatch.identifier || null;
             } else {
-                punishLogic(`ambiguous input. multiple players match '${inputName}'. type the full first name.`);
+                const surname = inputName.split(/\s+/).pop();
+                askToClarify(`several players match '${inputName}'. spell out the first name (e.g. a full given name + ${surname}) and play on.`);
                 return;
             }
         } else if (matchedCatalogPlayers.length === 1) {
@@ -1392,6 +1422,16 @@ async function punishLogic(reason) {
             startTimer(); 
         }
     }
+}
+
+// non-penalizing re-prompt: used in easy mode when the input is merely
+// under-specified (e.g. "a sharma" matches several players). no life is lost
+// and the turn is not forfeited — the player just clarifies and plays on.
+function askToClarify(reason) {
+    playSound(clickSound);
+    setSystemMessage(reason, false);
+    playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
+    resumeTimer();
 }
 
 function renderFeedItem(displayName, extract, isMe, cpEarned) {
