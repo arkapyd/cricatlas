@@ -374,23 +374,7 @@ async function awardCP(extract, demo) {
         baseCp = demo.isWomen ? 4 : 3;
     }
 
-    let activeStart = 2024;
-    const yearRegex = /\b(18\d{2}|19\d{2}|20\d{2})\b/g;
-    const years = [];
-    let match;
-    while ((match = yearRegex.exec(extract)) !== null) {
-        years.push(parseInt(match[1]));
-    }
-
-    if (years.length > 0) {
-        const bornMatch = extract.match(/born\s+(\d{1,2}\s+[a-z]+\s+)?(18\d{2}|19\d{2}|20\d{2})/i);
-        let birthYear = bornMatch ? parseInt(bornMatch[2]) : null;
-        let careerYears = years.filter(y => y !== birthYear && y > (birthYear || 0));
-        
-        if (careerYears.length > 0) activeStart = Math.min(...careerYears);
-        else if (birthYear) activeStart = birthYear + 20;
-        else activeStart = Math.min(...years);
-    }
+    const activeStart = estimateEra(extract) || 2024;
 
     let multiplier = 1;
     if (activeStart < 1980) multiplier = 1.5;
@@ -720,67 +704,31 @@ btnOffline.addEventListener('click', () => {
     
     if (typeof playerInput !== 'undefined') playerInput.value = '';
     
-    db.ref('players').once('value').then(snapshot => {
-        const data = snapshot.val();
+    // load the raw catalog AND the crowd-sourced enrichment layer together.
+    // player_meta grows over time as names get resolved during play, so category
+    // filtering gets more accurate the more the game is played.
+    Promise.all([
+        db.ref('players').once('value'),
+        db.ref('player_meta').once('value')
+    ]).then(([playersSnap, metaSnap]) => {
+        const data = playersSnap.val();
         if (!data) { if (typeof setSystemMessage === 'function') setSystemMessage("db error.", true); return; }
-        
+
+        const metaMap = metaSnap.val() || {};
+
         let sourceData = data.players ? data.players : data;
         let rawArray = Array.isArray(sourceData) ? sourceData : Object.values(sourceData);
 
-        const normalizeCricketName = (str) => {
-            return (str || '').toLowerCase().replace(/[\s.-]/g, '').replace(/chakaravarthy/g, 'chakravarthy');
-        };
-
-        const matchesSelectedCategory = (player, cat) => {
-            if (cat === 'general') return true;
-            
-            const bioText = ((player.bio || '') + ' ' + (player.full_name || '') + ' ' + (player.demographics || '')).toLowerCase();
-            const pName = (player.name || '').toLowerCase();
-            
-            if (pName.includes('chakravarthy') || pName.includes('chakaravarthy')) {
-                return cat === 'international' || cat === 'men';
-            }
-            
-            const intlKeywords = ['india', 'test match', 'odi', 't20i', 'international', 'world cup', 'asia cup', 'represent', 'cap'];
-            const domesticKeywords = ['ranji', 'syed mushtaq', 'vijay hazare', 'ipl', 'county cricket'];
-            
-            if (cat === 'international') {
-                const hasIntlKeyword = intlKeywords.some(kw => bioText.includes(kw));
-                return player.is_international === true || player.international === true || hasIntlKeyword;
-            }
-            if (cat === 'domestic') {
-                const hasDomKeyword = domesticKeywords.some(kw => bioText.includes(kw));
-                const isIntl = player.is_international === true || player.international === true || intlKeywords.some(kw => bioText.includes(kw));
-                return hasDomKeyword || !isIntl;
-            }
-            if (cat === 'men') {
-                return !bioText.includes('women') && !bioText.includes('wodi') && !bioText.includes('wt20i');
-            }
-            if (cat === 'women') {
-                return bioText.includes('women') || bioText.includes('wodi') || bioText.includes('wt20i') || bioText.includes('female');
-            }
-            return true;
-        };
-
-        let filteredPool = rawArray.map(p => ({
+        // NOTE: category is no longer pre-filtered here. The catalog carries whatever
+        // enrichment we already have (p.meta), and category eligibility is decided at
+        // move time — instantly for players we've already resolved, live for new ones.
+        playersCatalog = rawArray.map(p => ({
             name: (p.name || '').toLowerCase().trim(),
             unique_name: (p.unique_name || p.name || '').toLowerCase().trim(),
             full_name: (p.full_name || '').toLowerCase().trim(),
-            bio: p.bio || '',
-            demographics: p.demographics || '',
-            is_international: p.is_international || p.international || false
-        })).filter(p => p.name && matchesSelectedCategory(p, currentCategory));
-
-        if (filteredPool.length === 0) {
-            console.warn(`[engine warning] category filter for '${currentCategory}' resulted in 0 players. overriding back to general pool.`);
-            filteredPool = rawArray.map(p => ({
-                name: (p.name || '').toLowerCase().trim(),
-                unique_name: (p.unique_name || p.name || '').toLowerCase().trim(),
-                full_name: (p.full_name || '').toLowerCase().trim()
-            })).filter(p => p.name);
-        }
-
-        playersCatalog = filteredPool;
+            identifier: p.identifier || null,
+            meta: (p.identifier && metaMap[p.identifier]) ? metaMap[p.identifier] : null
+        })).filter(p => p.name);
 
         if (!loaded) {
             if (typeof playerInput !== 'undefined') playerInput.disabled = true; 
@@ -807,22 +755,127 @@ btnOffline.addEventListener('click', () => {
     });
 });
 
+// Fisher-Yates shuffle (returns a new array).
+function shuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+        const j = Math.floor(Math.random() * (i + 1));
+        [a[i], a[j]] = [a[j], a[i]];
+    }
+    return a;
+}
+
+// Estimate the year a cricketer's career started, from a Wikipedia extract.
+// Used both for CP era multipliers and for enrichment caching.
+function estimateEra(extract) {
+    if (!extract) return null;
+    const yearRegex = /\b(18\d{2}|19\d{2}|20\d{2})\b/g;
+    const years = [];
+    let m;
+    while ((m = yearRegex.exec(extract)) !== null) years.push(parseInt(m[1]));
+    if (years.length === 0) return null;
+
+    const bornMatch = extract.match(/born\s+(\d{1,2}\s+[a-z]+\s+)?(18\d{2}|19\d{2}|20\d{2})/i);
+    const birthYear = bornMatch ? parseInt(bornMatch[2]) : null;
+    const careerYears = years.filter(y => y !== birthYear && y > (birthYear || 0));
+
+    if (careerYears.length > 0) return Math.min(...careerYears);
+    if (birthYear) return birthYear + 20;
+    return Math.min(...years);
+}
+
+// Decide category eligibility from freshly-scanned demographics.
+function demoMatchesCategory(demo, cat) {
+    switch (cat) {
+        case 'international': return demo.isIntl === true;
+        case 'domestic':      return demo.isIntl !== true;
+        case 'women':         return demo.isWomen === true;
+        case 'men':           return demo.isWomen !== true;
+        default:              return true; // general
+    }
+}
+
+// Decide category eligibility from a cached meta record.
+// Returns true (matches), false (known mismatch), or null (unknown — not resolved yet).
+function metaMatchesCategory(meta, cat) {
+    if (!meta) return null;
+    switch (cat) {
+        case 'international': return meta.intl === true;
+        case 'domestic':      return meta.intl !== true;
+        case 'women':         return meta.women === true;
+        case 'men':           return meta.women !== true;
+        default:              return true;
+    }
+}
+
+// Write demographic enrichment back to the crowd-sourced layer so future sessions
+// (and every player) benefit. Keyed by the catalog identifier. Fire-and-forget.
+function cachePlayerMeta(identifier, demo, era) {
+    if (!identifier || !currentUser) return;
+    try {
+        db.ref(`player_meta/${identifier}`).transaction(cur => {
+            const plays = ((cur && cur.plays) || 0) + 1;
+            return {
+                intl: demo.isIntl === true,
+                women: demo.isWomen === true,
+                era: (era != null) ? era : ((cur && cur.era) || null),
+                plays,
+                updatedAt: firebase.database.ServerValue.TIMESTAMP
+            };
+        });
+    } catch (e) {
+        console.warn('[engine] player_meta cache failed:', e);
+    }
+}
+
+// Hard mode: the input must contain every given name of the resolved birth name,
+// each fully spelled out (no dropped middle names, no initials). Surname is already
+// enforced by the chain letter + resolution match, so it isn't re-checked here.
+function isFullBirthName(input, resolved) {
+    if (!resolved) return true; // nothing to compare against; don't over-punish
+    const norm = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+    const rParts = norm(resolved).trim().split(/\s+/);
+    if (rParts.length < 2) return true; // resolved is a single token; can't demand more
+    const inputTokens = norm(input).trim().split(/\s+/).filter(Boolean).map(t => t.replace(/\./g, ''));
+    const resolvedGiven = rParts.slice(0, -1); // everything except the surname
+    for (const g of resolvedGiven) {
+        if (g.length <= 1) continue; // resolved itself only had an initial here
+        if (!inputTokens.some(t => t === g)) return false;
+    }
+    return true;
+}
+
 async function computerTurn() {
     stopTimer();
     setSystemMessage("cpu is calculating...", false);
     playerInput.disabled = true; submitBtn.disabled = true;
 
-    let validCandidates = playersCatalog.filter(p => 
+    // candidates that fit the chain letter and haven't been used yet
+    let pool = playersCatalog.filter(p =>
         !usedPlayers.has(p.full_name) && !usedPlayers.has(p.unique_name) &&
         (currentLetter === '' || p.name.charAt(0) === currentLetter || p.unique_name.charAt(0) === currentLetter)
     );
 
+    // For a specific category, try players we already KNOW match first (cheap + no
+    // wasted lookups), then fall back to unknowns which we resolve live and cache.
+    // Players we know DON'T match are skipped entirely.
+    if (currentCategory !== 'general') {
+        const known   = pool.filter(p => metaMatchesCategory(p.meta, currentCategory) === true);
+        const unknown = pool.filter(p => p.meta == null);
+        pool = shuffle(known).concat(shuffle(unknown));
+    } else {
+        pool = shuffle(pool);
+    }
+
     let selected, trueFullName, extract, finalPlayName;
     let foundValid = false;
+    let attempts = 0;
+    const MAX_ATTEMPTS = 15; // bounds worst-case CPU think time (~a few seconds)
 
-    while (validCandidates.length > 0 && !foundValid) {
-        selected = validCandidates.splice(Math.floor(Math.random() * validCandidates.length), 1)[0];
-        
+    while (pool.length > 0 && !foundValid && attempts < MAX_ATTEMPTS) {
+        selected = pool.shift();
+        attempts++;
+
         const wikiData = await resolveFullName(selected.unique_name || selected.name);
         trueFullName = wikiData.resolved;
         extract = wikiData.extract;
@@ -831,7 +884,21 @@ async function computerTurn() {
         if (currentMode === 'medium' && wikiData.isUnresolved && (formats.givenNames[0]||"").length <= 2) continue; 
         if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && (formats.givenNames[0]||"").length <= 2) continue; 
 
-        let tempPlayName = currentMode === 'medium' ? formats.full : (currentMode === 'hard' ? (Math.random() > 0.5 ? formats.initials : formats.full) : selected.name);
+        // Enrich + gate by category. If we got a bio, scan it, cache it, and enforce
+        // the category. If we couldn't get a bio, we can't confirm the category, so
+        // such players are only usable in 'general'.
+        if (extract) {
+            const demo = scanDemographics(extract);
+            cachePlayerMeta(selected.identifier, demo, estimateEra(extract));
+            selected.meta = { intl: demo.isIntl === true, women: demo.isWomen === true };
+            if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) continue;
+        } else if (currentCategory !== 'general') {
+            continue;
+        }
+
+        // easy: play the catalog name as-is (may be initials).
+        // medium/hard: always play the fully spelled-out name (never initials).
+        let tempPlayName = (currentMode === 'medium' || currentMode === 'hard') ? formats.full : selected.name;
         if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
 
         finalPlayName = tempPlayName;
@@ -841,7 +908,9 @@ async function computerTurn() {
     if (!foundValid) {
         turnIndicator.textContent = "VICTORY";
         turnIndicator.style.color = "var(--win)";
-        setSystemMessage("cpu exhausted options. you win!", false);
+        setSystemMessage(currentCategory !== 'general'
+            ? `cpu couldn't find a valid ${currentCategory} name. you win!`
+            : "cpu exhausted options. you win!", false);
         triggerGameOver(false, null);
         return;
     }
@@ -1141,6 +1210,7 @@ async function handleMoveWrapper() {
     }
 
     let targetSearchQuery = inputName;
+    let matchedIdentifier = null;
     const inputParts = inputName.split(/\s+/);
     
     if (currentMode === 'easy') {
@@ -1168,12 +1238,14 @@ async function handleMoveWrapper() {
             const exactMatch = matchedCatalogPlayers.find(p => (p.unique_name || p.name) === inputName || p.full_name === inputName);
             if (exactMatch) {
                 targetSearchQuery = exactMatch.unique_name || exactMatch.name;
+                matchedIdentifier = exactMatch.identifier || null;
             } else {
                 punishLogic(`ambiguous input. multiple players match '${inputName}'. type the full first name.`);
                 return;
             }
         } else if (matchedCatalogPlayers.length === 1) {
             targetSearchQuery = matchedCatalogPlayers[0].unique_name || matchedCatalogPlayers[0].name;
+            matchedIdentifier = matchedCatalogPlayers[0].identifier || null;
         }
     } else {
         // only punish initials if the player is NOT in easy mode.
@@ -1193,7 +1265,28 @@ async function handleMoveWrapper() {
     if (!extract || !extract.toLowerCase().includes("cricket")) { punishLogic(`could not verify '${inputName}' as a cricketer.`); return; }
 
     const demo = scanDemographics(extract);
-    
+
+    // Category + strict-difficulty enforcement only applies to offline play.
+    // Online matches are fixed to easy / general (see the lobby).
+    if (!isMultiplayer) {
+        if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) {
+            punishLogic(`'${inputName}' doesn't qualify for the ${currentCategory} category.`);
+            return;
+        }
+        if (currentMode === 'hard' && !isFullBirthName(inputName, trueFullName)) {
+            punishLogic(`hard mode: type the complete name — all given names spelled out.`);
+            return;
+        }
+    }
+
+    // Enrich the crowd-sourced layer so category filtering improves over time.
+    if (!matchedIdentifier) {
+        const found = playersCatalog.find(p =>
+            (p.unique_name || p.name) === targetSearchQuery || p.name === inputName);
+        matchedIdentifier = found ? found.identifier : null;
+    }
+    cachePlayerMeta(matchedIdentifier, demo, estimateEra(extract));
+
     // play correct chime right before processing state change
     playSound(correctSound);
     
