@@ -961,7 +961,7 @@ async function computerTurn() {
     let selected, trueFullName, extract, finalPlayName;
     let foundValid = false;
     let attempts = 0;
-    const MAX_ATTEMPTS = 15; 
+    const MAX_ATTEMPTS = 30; 
 
     while (pool.length > 0 && !foundValid && attempts < MAX_ATTEMPTS) {
         if (Date.now() >= deadline) { timedOut = true; break; }
@@ -977,19 +977,19 @@ async function computerTurn() {
         }
         trueFullName = wikiData.resolved;
         extract = wikiData.extract;
+
+        // only play names we can actually confirm as cricketers. this skips
+        // unverified resolutions that used to surface as placeholder text
+        // ("...recognized in the competitive sports registry") or name-etymology
+        // pages, especially on the opening move when any letter is allowed.
+        if (!extract || !/cricket|batsman|bowler|wicket-keeper|all-rounder/.test(extract.toLowerCase())) continue;
+
         const formats = getNameFormats(trueFullName, wikiData.isUnresolved);
 
-        if (currentMode === 'medium' && wikiData.isUnresolved && (formats.givenNames[0]||"").length <= 2) continue; 
-        if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && (formats.givenNames[0]||"").length <= 2) continue; 
-
-        if (extract) {
-            const demo = scanDemographics(extract);
-            cachePlayerMeta(selected.identifier, demo, estimateEra(extract));
-            selected.meta = { intl: demo.isIntl === true, women: demo.isWomen === true };
-            if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) continue;
-        } else if (currentCategory !== 'general') {
-            continue;
-        }
+        const demo = scanDemographics(extract);
+        cachePlayerMeta(selected.identifier, demo, estimateEra(extract));
+        selected.meta = { intl: demo.isIntl === true, women: demo.isWomen === true };
+        if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) continue;
 
         let tempPlayName = (currentMode === 'medium' || currentMode === 'hard') ? formats.full : selected.name;
         if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
@@ -1583,26 +1583,36 @@ async function resolveFullName(queryName) {
             pages = data.query && data.query.pages ? Object.values(data.query.pages) : []; 
         }
         
+        // strips accents AND punctuation (apostrophes/hyphens/dots) so
+        // "d'arcy" matches "darcy", "o'brien" matches "obrien", etc.
+        const normName = s => (s || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019.\-]/g, "").toLowerCase();
+
         for (let pageData of pages) {
-            if (pageData.title.toLowerCase().includes("(disambiguation)")) continue;
-            
+            const titleLower = pageData.title.toLowerCase();
+            if (titleLower.includes("(disambiguation)") || titleLower.includes("(name)") || titleLower.includes("(surname)")) continue;
+
             const extract = pageData.extract || "";
             const extractLower = extract.toLowerCase();
-            
+
             if (extractLower.includes("may refer to:") || extractLower.includes("is a disambiguation page")) continue;
+            // reject name/etymology articles (e.g. "Ramesh is a male given name...")
+            if (extractLower.includes("given name") || extractLower.includes("is a surname") ||
+                extractLower.includes("is a family name") || extractLower.includes("is a unisex name")) continue;
 
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
             const titleParts = title.split(/\s+/);
             const titleSurname = titleParts[titleParts.length - 1];
             const titleGiven = titleParts.slice(0, -1).join(' ');
 
-            const normTitleSurname = titleSurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
-            const normQuerySurname = querySurname.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
+            const normTitleSurname = normName(titleSurname);
+            const normQuerySurname = normName(querySurname);
+            const normTitleGiven = normName(titleGiven);
+            const normQueryGiven = normName(queryGiven);
 
-            const hasCricketKeywords = extractLower.includes("cricket") || extractLower.includes("batsman") || extractLower.includes("bowler") || extractLower.includes("wicket-keeper");
+            const hasCricketKeywords = extractLower.includes("cricket") || extractLower.includes("batsman") || extractLower.includes("bowler") || extractLower.includes("wicket-keeper") || extractLower.includes("all-rounder");
 
             if (hasCricketKeywords && normTitleSurname === normQuerySurname) {
-                if (titleGiven.startsWith(queryGiven) || queryGiven.startsWith(titleGiven)) {
+                if (normTitleGiven.startsWith(normQueryGiven) || normQueryGiven.startsWith(normTitleGiven)) {
                     const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
                     return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
                 }
