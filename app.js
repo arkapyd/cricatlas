@@ -898,7 +898,7 @@ function stopThinking() {
 
 // the cpu now plays against its own shot clock. if it can't produce a valid
 // move inside the budget for the current difficulty, it forfeits and you win.
-const CPU_TIME_BUDGET = { easy: 20, medium: 35, hard: 60 };
+const CPU_TIME_BUDGET = { easy: 28, medium: 49, hard: 84 };
 let cpuCountdownTimer = null;
 // the very first cpu move after a cold boot is slow (warming up network +
 // wikipedia lookups), so its shot clock is not enforced. every move after is.
@@ -1320,6 +1320,7 @@ async function handleMoveWrapper() {
     let targetSearchQuery = inputName;
     let matchedIdentifier = null;
     const inputParts = inputName.split(/\s+/);
+    const isInitialInput = inputParts.length >= 2 && inputParts[0].replace(/\./g, '').length === 1;
     
     if (currentMode === 'easy') {
         const matchedCatalogPlayers = playersCatalog.filter(p => {
@@ -1358,7 +1359,7 @@ async function handleMoveWrapper() {
         }
     } else {
         if (currentMode !== 'easy' && (inputParts.length < 2 || inputParts[0].length === 1)) {
-            punishLogic(`initials not allowed in ${currentMode} mode. use full first name.`);
+            askToClarify(`${currentMode} mode needs the full first name — spell out the given name and try again (no life lost).`);
             return;
         }
     }
@@ -1369,7 +1370,14 @@ async function handleMoveWrapper() {
 
     if (!isMultiplayer && usedPlayers.has(trueFullName)) { punishLogic(`${trueFullName.toUpperCase()} already used.`); return; }
     if (isMultiplayer && gameData && gameData.usedPlayers && gameData.usedPlayers[trueFullName]) { punishLogic(`${trueFullName.toUpperCase()} already used.`); return; }
-    if (!extract || !extract.toLowerCase().includes("cricket")) { punishLogic(`could not verify '${inputName}' as a cricketer.`); return; }
+    if (!extract || !extract.toLowerCase().includes("cricket")) {
+        if (!isMultiplayer && currentMode === 'easy' && isInitialInput) {
+            askToClarify(`couldn't pin down '${inputName}' from just the initial — type the full first name (e.g. the given name spelled out + ${inputParts[inputParts.length - 1]}).`);
+            return;
+        }
+        punishLogic(`could not verify '${inputName}' as a cricketer.`);
+        return;
+    }
 
     const demo = scanDemographics(extract);
 
