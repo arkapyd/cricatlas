@@ -5,7 +5,14 @@ const ASSETS = [
     './styles.css',
     './app.js',
     './manifest.json',
-    'https://fonts.googleapis.com/css2?family=Anton&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap'
+    './cricket_atlas.json',
+    './audio/ui_click.mp3',
+    './audio/bat_hit.mp3',
+    './audio/crowd_groan.mp3',
+    'https://fonts.googleapis.com/css2?family=Anton&family=Manrope:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500;700&display=swap',
+    'https://www.gstatic.com/firebasejs/10.10.0/firebase-app-compat.js',
+    'https://www.gstatic.com/firebasejs/10.10.0/firebase-auth-compat.js',
+    'https://www.gstatic.com/firebasejs/10.10.0/firebase-database-compat.js'
     // add your icon paths here if you have them, e.g., './icon-192.png'
 ];
 
