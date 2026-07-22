@@ -10,6 +10,20 @@ const wrongSound = new Audio('audio/crowd_groan.mp3');
 correctSound.volume = 0.7;
 wrongSound.volume = 0.7;
 
+// mobile browsers block audio until a user gesture. on the first interaction,
+// briefly play+pause each clip to unlock the audio elements so later sound
+// effects (moves, revives) actually fire.
+let audioUnlocked = false;
+function unlockAudio() {
+    if (audioUnlocked) return;
+    audioUnlocked = true;
+    [clickSound, correctSound, wrongSound].forEach(a => {
+        try { a.play().then(() => { a.pause(); a.currentTime = 0; }).catch(() => {}); } catch (e) {}
+    });
+}
+['pointerdown', 'touchstart', 'click', 'keydown'].forEach(evt =>
+    document.addEventListener(evt, unlockAudio, { once: true, passive: true }));
+
 function playSound(audioElement) {
     audioElement.currentTime = 0;
     audioElement.play().catch(err => console.log('audio playback blocked until user interaction', err));
@@ -711,24 +725,17 @@ btnOffline.addEventListener('click', () => {
     
     if (typeof playerInput !== 'undefined') playerInput.value = '';
     
-    // player_meta is an OPTIONAL enrichment layer. it must never be able to
-    // block (or hang) the game start — if it's unreadable (e.g. db rules) or
-    // slow, we proceed with no meta and let categories resolve live instead.
-    const metaPromise = db.ref('player_meta').once('value')
-        .then(s => (s && s.val()) || {})
-        .catch(e => { console.warn('[engine] player_meta unavailable, continuing without enrichment:', e); return {}; });
+    // meta enrichment is optional and online-only; never let it block the start
+    const metaPromise = navigator.onLine
+        ? Promise.race([
+            db.ref('player_meta').once('value').then(s => (s && s.val()) || {}),
+            new Promise(res => setTimeout(() => res({}), 8000))
+          ]).catch(() => ({}))
+        : Promise.resolve({});
 
-    // the players catalog IS required. race it against a timeout so a stalled
-    // connection surfaces an error instead of freezing on the loading screen.
-    const playersPromise = Promise.race([
-        db.ref('players').once('value'),
-        new Promise((_, reject) => setTimeout(() => reject(new Error('players read timed out')), 15000))
-    ]);
-
-    playersPromise.then(async (playersSnap) => {
-        const data = playersSnap.val();
+    loadPlayersData().then(async (data) => {
         if (!data) {
-            if (typeof setSystemMessage === 'function') setSystemMessage("player database is empty or unreadable. check db read rules.", true);
+            if (typeof setSystemMessage === 'function') setSystemMessage("player database unavailable.", true);
             if (typeof turnIndicator !== 'undefined') { turnIndicator.textContent = "LOAD FAILED"; turnIndicator.style.color = "var(--loss)"; }
             if (typeof statusBox !== 'undefined') statusBox.textContent = "!";
             return;
@@ -770,12 +777,34 @@ btnOffline.addEventListener('click', () => {
             if (typeof startTimer === 'function') startTimer();
         }
     }).catch(err => {
-        console.error('[engine] catalog load failed:', err);
-        if (typeof setSystemMessage === 'function') setSystemMessage("couldn't load the player database — check your connection or database read rules, then exit and retry.", true);
+        console.error('[engine] catalog load failed (firebase + local json):', err);
+        if (typeof setSystemMessage === 'function') setSystemMessage("couldn't load the player database. connect once so it can cache for offline, then retry.", true);
         if (typeof turnIndicator !== 'undefined') { turnIndicator.textContent = "LOAD FAILED"; turnIndicator.style.color = "var(--loss)"; }
         if (typeof statusBox !== 'undefined') statusBox.textContent = "!";
     });
 });
+
+// loads the ~18k player catalog. tries firebase when online (bounded by a
+// timeout), and falls back to the service-worker-cached cricket_atlas.json so
+// "play offline" works with no connection at all.
+async function loadPlayersData() {
+    if (navigator.onLine) {
+        try {
+            const snap = await Promise.race([
+                db.ref('players').once('value'),
+                new Promise((_, rej) => setTimeout(() => rej(new Error('firebase players timed out')), 8000))
+            ]);
+            const val = snap && snap.val();
+            if (val) return val;
+            console.warn('[engine] firebase players empty; falling back to local json');
+        } catch (e) {
+            console.warn('[engine] firebase players unavailable; falling back to local json:', e);
+        }
+    }
+    const resp = await fetch('./cricket_atlas.json');
+    if (!resp.ok) throw new Error('local catalog fetch failed: ' + resp.status);
+    return await resp.json();
+}
 
 function shuffle(arr) {
     const a = arr.slice();
@@ -1001,39 +1030,50 @@ async function computerTurn() {
     // cap each individual lookup so one slow/hung request can't swallow the
     // whole shot clock (the old code handed the first attempt the entire budget).
     const PER_ATTEMPT_MS = 6000;
+    // verify candidates a batch at a time in PARALLEL rather than one-by-one, so
+    // the cpu's turn isn't (attempts x latency) long on a slow connection.
+    const BATCH_SIZE = 6;
 
     while (pool.length > 0 && !foundValid && attempts < MAX_ATTEMPTS) {
         if (enforceClock && Date.now() >= deadline) { timedOut = true; break; }
-        selected = pool.shift();
-        attempts++;
 
         let perAttempt = PER_ATTEMPT_MS;
         if (enforceClock) perAttempt = Math.min(perAttempt, deadline - Date.now());
+
+        const batch = pool.splice(0, BATCH_SIZE);
+        attempts += batch.length;
+
         // fast=true skips the slow espncricinfo proxy fallback for the cpu
-        const wikiData = await withDeadline(resolveFullName(selected.unique_name || selected.name, true), perAttempt);
-        if (wikiData.__timeout) continue; // this candidate was too slow — try the next
+        const results = await Promise.all(batch.map(async cand => {
+            const wd = await withDeadline(resolveFullName(cand.unique_name || cand.name, true), perAttempt);
+            return { cand, wd };
+        }));
 
-        trueFullName = wikiData.resolved;
-        extract = wikiData.extract;
+        for (const { cand, wd } of results) {
+            if (!wd || wd.__timeout || !wd.resolved) continue;
+            const ex = wd.extract;
 
-        // only play names we can actually confirm as cricketers. this skips
-        // unverified resolutions that used to surface as placeholder text
-        // ("...recognized in the competitive sports registry") or name-etymology
-        // pages, especially on the opening move when any letter is allowed.
-        if (!extract || !/cricket|batsman|bowler|wicket-keeper|all-rounder/.test(extract.toLowerCase())) continue;
+            // only play names we can actually confirm as cricketers. this skips
+            // unverified resolutions that used to surface as placeholder text
+            // ("...recognized in the competitive sports registry") or name pages.
+            if (!ex || !/cricket|batsman|bowler|wicket-keeper|all-rounder/.test(ex.toLowerCase())) continue;
 
-        const formats = getNameFormats(trueFullName, wikiData.isUnresolved);
+            const demo = scanDemographics(ex);
+            cachePlayerMeta(cand.identifier, demo, estimateEra(ex));
+            cand.meta = { intl: demo.isIntl === true, women: demo.isWomen === true };
+            if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) continue;
 
-        const demo = scanDemographics(extract);
-        cachePlayerMeta(selected.identifier, demo, estimateEra(extract));
-        selected.meta = { intl: demo.isIntl === true, women: demo.isWomen === true };
-        if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) continue;
+            const formats = getNameFormats(wd.resolved, wd.isUnresolved);
+            const tempPlayName = (currentMode === 'medium' || currentMode === 'hard') ? formats.full : cand.name;
+            if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
 
-        let tempPlayName = (currentMode === 'medium' || currentMode === 'hard') ? formats.full : selected.name;
-        if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
-
-        finalPlayName = tempPlayName;
-        foundValid = true;
+            selected = cand;
+            trueFullName = wd.resolved;
+            extract = ex;
+            finalPlayName = tempPlayName;
+            foundValid = true;
+            break;
+        }
     }
 
     stopThinking();
@@ -1670,7 +1710,16 @@ async function resolveFullName(queryName, fast = false) {
             const ciSearchUrl = `https://search.espncricinfo.com/ci/content/site/search.html?search=${encodeURIComponent(queryName)}&type=player`;
             const proxyUrl = `https://api.allorigins.win/get?url=${encodeURIComponent(ciSearchUrl)}`;
             
-            const ciResponse = await fetch(proxyUrl);
+            // bound the flaky public proxy: abort after 5s so it fails fast
+            // instead of hanging the human verification path.
+            const ciController = new AbortController();
+            const ciTimer = setTimeout(() => ciController.abort(), 5000);
+            let ciResponse;
+            try {
+                ciResponse = await fetch(proxyUrl, { signal: ciController.signal });
+            } finally {
+                clearTimeout(ciTimer);
+            }
             if (ciResponse.ok) {
                 const ciData = await ciResponse.json();
                 const htmlText = ciData.contents.toLowerCase();
