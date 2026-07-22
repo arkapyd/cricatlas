@@ -29,14 +29,14 @@ function unmuteGameAudio() {
 
 // update with your actual firebase keys
 const firebaseConfig = {
-  apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
-  authDomain: "cricatlas.firebaseapp.com",
-  databaseURL: "https://cricatlas-default-rtdb.asia-southeast1.firebasedatabase.app/",
-  projectId: "cricatlas",
-  storageBucket: "cricatlas.firebasestorage.app",
-  messagingSenderId: "858714427166",
-  appId: "1:858714427166:web:deac448d834d22bafa430f",
-  measurementId: "G-ZS4RDHBNMT"
+    apiKey: "AIzaSyDW0Byc-pyqmjrfzVy9ZRrjjuQ6Oa4SDmk",
+    authDomain: "cricatlas.firebaseapp.com",
+    databaseURL: "https://cricatlas-default-rtdb.asia-southeast1.firebasedatabase.app/",
+    projectId: "cricatlas",
+    storageBucket: "cricatlas.firebasestorage.app",
+    messagingSenderId: "858714427166",
+    appId: "1:858714427166:web:deac448d834d22bafa430f",
+    measurementId: "G-ZS4RDHBNMT"
 };
 
 firebase.initializeApp(firebaseConfig);
@@ -348,15 +348,12 @@ if (leaveYesBtn) {
         playSound(clickSound);
         leaveConfirmModal.classList.add('hide-element');
         if (isMultiplayer) {
-            const snap = await gameRef.once('value');
-            const game = snap.val();
-            const isP1 = game.p1.uid === currentUser.uid;
-            const oppUid = isP1 ? (game.p2 ? game.p2.uid : null) : game.p1.uid;
-            if (oppUid) {
-                await gameRef.update({ status: 'finished', winner: oppUid, [`${isP1 ? 'p1' : 'p2'}/lives`]: 0 });
-            } else {
-                await gameRef.update({ status: 'finished' });
-            }
+            // security update: push forfeit intent to server queue
+            db.ref(`games/${currentGameId}/moves_queue`).push({
+                action: 'forfeit',
+                uid: currentUser.uid,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
+            });
         } else {
             lives = 0;
             updateLivesDisplay();
@@ -383,8 +380,8 @@ async function awardCP(extract, demo) {
 
     const earnedCP = parseFloat((baseCp * multiplier).toFixed(1));
     
-    const ref = db.ref(`users/${currentUser.uid}/cp`);
-    await ref.transaction(currentVal => (currentVal || 0) + earnedCP);
+    // security update: client no longer directly transacts cp. 
+    // cloud functions handle authoritative cp distribution on the backend.
     
     return earnedCP;
 }
@@ -485,7 +482,9 @@ function triggerGameOver(isMultiplayerDefeat = false, oppUid = null) {
 async function finalizeGameOver(isOnline, oppUid) {
     if (reviveContainer) reviveContainer.classList.add('hide-element');
     if (isOnline && oppUid) {
-        await gameRef.update({ status: 'finished', winner: oppUid });
+        // security update: final state sync handled by server; ui fallback
+        statusBox.textContent = "OVER";
+        statusBox.style.color = "var(--loss)";
     } else if (!isOnline) {
         statusBox.textContent = "OVER";
         statusBox.style.color = "var(--loss)";
@@ -522,15 +521,13 @@ if (rewardAdBtn) {
                 const isOnline = reviveContainer.dataset.isOnline === 'true';
                 
                 if (isOnline) {
-                    const snap = await gameRef.once('value');
-                    const game = snap.val();
-                    const isP1 = game.p1.uid === currentUser.uid;
-                    await gameRef.update({ 
-                        status: 'playing', 
-                        [`${isP1 ? 'p1' : 'p2'}/lives`]: 1,
-                        turn: currentUser.uid 
+                    // security update: request revive via server queue
+                    db.ref(`games/${currentGameId}/moves_queue`).push({
+                        action: 'revive',
+                        uid: currentUser.uid,
+                        timestamp: firebase.database.ServerValue.TIMESTAMP
                     });
-                    setSystemMessage("revived via ad! awaiting input...", false);
+                    setSystemMessage("revive request sent to server...", false);
                     startTimer();
                 } else {
                     playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
@@ -556,20 +553,12 @@ if (declineReviveBtn) {
 async function handleTimeout() {
     playSound(wrongSound);
     if (isMultiplayer) {
-        const snap = await gameRef.once('value');
-        const game = snap.val();
-        if(game.status === 'finished') return;
-
-        const isP1 = game.p1.uid === currentUser.uid;
-        const currentLives = isP1 ? game.p1.lives : game.p2.lives;
-        const oppUid = isP1 ? game.p2.uid : game.p1.uid;
-
-        if (currentLives - 1 <= 0) {
-            await gameRef.update({ [`${isP1 ? 'p1' : 'p2'}/lives`]: 0, status: 'revive_pending', turn: currentUser.uid });
-        } else {
-            setSystemMessage(`time's up! you lost a life and your turn.`, true);
-            await gameRef.update({ [`${isP1 ? 'p1' : 'p2'}/lives`]: currentLives - 1, turn: oppUid });
-        }
+        // security update: push timeout event to server queue for validation
+        db.ref(`games/${currentGameId}/moves_queue`).push({
+            action: 'timeout',
+            uid: currentUser.uid,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
     } else {
         lives--;
         updateLivesDisplay();
@@ -704,9 +693,6 @@ btnOffline.addEventListener('click', () => {
     
     if (typeof playerInput !== 'undefined') playerInput.value = '';
     
-    // load the raw catalog AND the crowd-sourced enrichment layer together.
-    // player_meta grows over time as names get resolved during play, so category
-    // filtering gets more accurate the more the game is played.
     Promise.all([
         db.ref('players').once('value'),
         db.ref('player_meta').once('value')
@@ -719,9 +705,6 @@ btnOffline.addEventListener('click', () => {
         let sourceData = data.players ? data.players : data;
         let rawArray = Array.isArray(sourceData) ? sourceData : Object.values(sourceData);
 
-        // NOTE: category is no longer pre-filtered here. The catalog carries whatever
-        // enrichment we already have (p.meta), and category eligibility is decided at
-        // move time — instantly for players we've already resolved, live for new ones.
         playersCatalog = rawArray.map(p => ({
             name: (p.name || '').toLowerCase().trim(),
             unique_name: (p.unique_name || p.name || '').toLowerCase().trim(),
@@ -755,7 +738,6 @@ btnOffline.addEventListener('click', () => {
     });
 });
 
-// Fisher-Yates shuffle (returns a new array).
 function shuffle(arr) {
     const a = arr.slice();
     for (let i = a.length - 1; i > 0; i--) {
@@ -765,8 +747,6 @@ function shuffle(arr) {
     return a;
 }
 
-// Estimate the year a cricketer's career started, from a Wikipedia extract.
-// Used both for CP era multipliers and for enrichment caching.
 function estimateEra(extract) {
     if (!extract) return null;
     const yearRegex = /\b(18\d{2}|19\d{2}|20\d{2})\b/g;
@@ -784,19 +764,16 @@ function estimateEra(extract) {
     return Math.min(...years);
 }
 
-// Decide category eligibility from freshly-scanned demographics.
 function demoMatchesCategory(demo, cat) {
     switch (cat) {
         case 'international': return demo.isIntl === true;
         case 'domestic':      return demo.isIntl !== true;
         case 'women':         return demo.isWomen === true;
         case 'men':           return demo.isWomen !== true;
-        default:              return true; // general
+        default:              return true; 
     }
 }
 
-// Decide category eligibility from a cached meta record.
-// Returns true (matches), false (known mismatch), or null (unknown — not resolved yet).
 function metaMatchesCategory(meta, cat) {
     if (!meta) return null;
     switch (cat) {
@@ -808,57 +785,88 @@ function metaMatchesCategory(meta, cat) {
     }
 }
 
-// Write demographic enrichment back to the crowd-sourced layer so future sessions
-// (and every player) benefit. Keyed by the catalog identifier. Fire-and-forget.
 function cachePlayerMeta(identifier, demo, era) {
     if (!identifier || !currentUser) return;
     try {
-        db.ref(`player_meta/${identifier}`).transaction(cur => {
-            const plays = ((cur && cur.plays) || 0) + 1;
-            return {
-                intl: demo.isIntl === true,
-                women: demo.isWomen === true,
-                era: (era != null) ? era : ((cur && cur.era) || null),
-                plays,
-                updatedAt: firebase.database.ServerValue.TIMESTAMP
-            };
+        // security update: push to a server-side queue instead of direct client write
+        db.ref('meta_queue').push({
+            identifier: identifier,
+            intl: demo.isIntl === true,
+            women: demo.isWomen === true,
+            era: (era != null) ? era : null,
+            uid: currentUser.uid,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
         });
     } catch (e) {
         console.warn('[engine] player_meta cache failed:', e);
     }
 }
 
-// Hard mode: the input must contain every given name of the resolved birth name,
-// each fully spelled out (no dropped middle names, no initials). Surname is already
-// enforced by the chain letter + resolution match, so it isn't re-checked here.
 function isFullBirthName(input, resolved) {
-    if (!resolved) return true; // nothing to compare against; don't over-punish
+    if (!resolved) return true; 
     const norm = s => s.normalize("NFD").replace(/[\u0300-\u036f]/g, "");
     const rParts = norm(resolved).trim().split(/\s+/);
-    if (rParts.length < 2) return true; // resolved is a single token; can't demand more
+    if (rParts.length < 2) return true; 
     const inputTokens = norm(input).trim().split(/\s+/).filter(Boolean).map(t => t.replace(/\./g, ''));
-    const resolvedGiven = rParts.slice(0, -1); // everything except the surname
+    const resolvedGiven = rParts.slice(0, -1); 
     for (const g of resolvedGiven) {
-        if (g.length <= 1) continue; // resolved itself only had an initial here
+        if (g.length <= 1) continue; 
         if (!inputTokens.some(t => t === g)) return false;
     }
     return true;
 }
 
+// cricket-flavoured "the engine is pondering" lines, cycled while the cpu
+// resolves candidates (which can take a while — live wikipedia/cricinfo lookups).
+const THINKING_LINES = [
+    "consulting Wisden…",
+    "checking the scorecard…",
+    "studying the pitch report…",
+    "reviewing the replay…",
+    "calling for the third umpire…",
+    "marking out a run-up…",
+    "setting the field…",
+    "taking guard at the crease…",
+    "polishing the ball…",
+    "signalling to the pavilion…",
+    "adjusting the sightscreen…",
+    "checking Hawk-Eye…",
+    "walking back to its mark…",
+    "waiting on the boundary throw…",
+    "having a word with the captain…"
+];
+
+let thinkingTimer = null;
+
+function startThinking() {
+    stopThinking();
+    const lines = shuffle(THINKING_LINES);
+    let i = 0;
+    turnIndicator.textContent = "CPU AT THE CREASE";
+    turnIndicator.style.color = "var(--accent)";
+    messageEl.style.color = "var(--accent)";
+    messageEl.textContent = `// ${lines[0]}`;
+    thinkingTimer = setInterval(() => {
+        i = (i + 1) % lines.length;
+        messageEl.style.color = "var(--accent)";
+        messageEl.textContent = `// ${lines[i]}`;
+    }, 1500);
+}
+
+function stopThinking() {
+    if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; }
+}
+
 async function computerTurn() {
     stopTimer();
-    setSystemMessage("cpu is calculating...", false);
+    startThinking();
     playerInput.disabled = true; submitBtn.disabled = true;
 
-    // candidates that fit the chain letter and haven't been used yet
     let pool = playersCatalog.filter(p =>
         !usedPlayers.has(p.full_name) && !usedPlayers.has(p.unique_name) &&
         (currentLetter === '' || p.name.charAt(0) === currentLetter || p.unique_name.charAt(0) === currentLetter)
     );
 
-    // For a specific category, try players we already KNOW match first (cheap + no
-    // wasted lookups), then fall back to unknowns which we resolve live and cache.
-    // Players we know DON'T match are skipped entirely.
     if (currentCategory !== 'general') {
         const known   = pool.filter(p => metaMatchesCategory(p.meta, currentCategory) === true);
         const unknown = pool.filter(p => p.meta == null);
@@ -870,7 +878,7 @@ async function computerTurn() {
     let selected, trueFullName, extract, finalPlayName;
     let foundValid = false;
     let attempts = 0;
-    const MAX_ATTEMPTS = 15; // bounds worst-case CPU think time (~a few seconds)
+    const MAX_ATTEMPTS = 15; 
 
     while (pool.length > 0 && !foundValid && attempts < MAX_ATTEMPTS) {
         selected = pool.shift();
@@ -884,9 +892,6 @@ async function computerTurn() {
         if (currentMode === 'medium' && wikiData.isUnresolved && (formats.givenNames[0]||"").length <= 2) continue; 
         if (currentMode === 'hard' && wikiData.isUnresolved && !formats.isMulti && (formats.givenNames[0]||"").length <= 2) continue; 
 
-        // Enrich + gate by category. If we got a bio, scan it, cache it, and enforce
-        // the category. If we couldn't get a bio, we can't confirm the category, so
-        // such players are only usable in 'general'.
         if (extract) {
             const demo = scanDemographics(extract);
             cachePlayerMeta(selected.identifier, demo, estimateEra(extract));
@@ -896,14 +901,14 @@ async function computerTurn() {
             continue;
         }
 
-        // easy: play the catalog name as-is (may be initials).
-        // medium/hard: always play the fully spelled-out name (never initials).
         let tempPlayName = (currentMode === 'medium' || currentMode === 'hard') ? formats.full : selected.name;
         if (currentLetter !== '' && tempPlayName.charAt(0) !== currentLetter) continue;
 
         finalPlayName = tempPlayName;
         foundValid = true;
     }
+
+    stopThinking();
 
     if (!foundValid) {
         turnIndicator.textContent = "VICTORY";
@@ -1158,18 +1163,19 @@ function renderOnlineState(game, amIP1) {
         return;
     }
 
+    // security update: handle state recovery safely when server processes moves
     const newlyMyTurn = (game.turn === currentUser.uid);
-    if(newlyMyTurn !== isMyTurn) {
+    if(newlyMyTurn !== isMyTurn || (isMyTurn && playerInput.disabled)) {
         isMyTurn = newlyMyTurn;
         if (isMyTurn) {
             turnIndicator.textContent = "YOUR TURN"; turnIndicator.style.color = "var(--win)";
             playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
-            setSystemMessage("awaiting input...", false);
+            setSystemMessage(game.lastMessage || "awaiting input...", false);
             startTimer();
         } else {
             turnIndicator.textContent = "OPPONENT'S TURN"; turnIndicator.style.color = "var(--loss)";
             playerInput.disabled = true; submitBtn.disabled = true;
-            setSystemMessage("waiting for opponent...", false);
+            setSystemMessage(game.lastMessage || "waiting for opponent...", false);
             stopTimer();
         }
     }
@@ -1206,7 +1212,15 @@ async function handleMoveWrapper() {
     if (isMultiplayer) {
         const snap = await gameRef.once('value'); gameData = snap.val();
         isRanked = gameData.isRanked !== false;
-        if (gameData.usedPlayers && gameData.usedPlayers[inputName]) { punishLogic(`${inputName.toUpperCase()} was used.`); return; }
+        
+        // security update: push move to queue instead of processing and verifying locally
+        db.ref(`games/${currentGameId}/moves_queue`).push({
+            action: 'move',
+            inputName: inputName,
+            uid: currentUser.uid,
+            timestamp: firebase.database.ServerValue.TIMESTAMP
+        });
+        return; 
     }
 
     let targetSearchQuery = inputName;
@@ -1248,8 +1262,6 @@ async function handleMoveWrapper() {
             matchedIdentifier = matchedCatalogPlayers[0].identifier || null;
         }
     } else {
-        // only punish initials if the player is NOT in easy mode.
-        // if they are in easy mode, this allows the initial to pass through to the wikipedia fallback.
         if (currentMode !== 'easy' && (inputParts.length < 2 || inputParts[0].length === 1)) {
             punishLogic(`initials not allowed in ${currentMode} mode. use full first name.`);
             return;
@@ -1266,8 +1278,6 @@ async function handleMoveWrapper() {
 
     const demo = scanDemographics(extract);
 
-    // Category + strict-difficulty enforcement only applies to offline play.
-    // Online matches are fixed to easy / general (see the lobby).
     if (!isMultiplayer) {
         if (currentCategory !== 'general' && !demoMatchesCategory(demo, currentCategory)) {
             punishLogic(`'${inputName}' doesn't qualify for the ${currentCategory} category.`);
@@ -1279,7 +1289,6 @@ async function handleMoveWrapper() {
         }
     }
 
-    // Enrich the crowd-sourced layer so category filtering improves over time.
     if (!matchedIdentifier) {
         const found = playersCatalog.find(p =>
             (p.unique_name || p.name) === targetSearchQuery || p.name === inputName);
@@ -1287,16 +1296,11 @@ async function handleMoveWrapper() {
     }
     cachePlayerMeta(matchedIdentifier, demo, estimateEra(extract));
 
-    // play correct chime right before processing state change
     playSound(correctSound);
     
     const earnedCP = isRanked ? await awardCP(extract, demo) : 0;
 
-    if (isMultiplayer) {
-        const oppUid = (gameData.p1.uid === currentUser.uid) ? gameData.p2.uid : gameData.p1.uid;
-        await gameRef.update({ currentLetter: getLastLetterOfSurname(inputName), turn: oppUid, [`usedPlayers/${trueFullName}`]: true, moveCount: (gameData.moveCount || 0) + 1 });
-        gameRef.child('moves').push().set({ displayName: inputName, extract, uid: currentUser.uid, cpEarned: earnedCP });
-    } else {
+    if (!isMultiplayer) {
         usedPlayers.add(trueFullName);
         currentLetter = getLastLetterOfSurname(inputName);
         statusBox.textContent = currentLetter.toUpperCase();
@@ -1309,22 +1313,7 @@ async function handleMoveWrapper() {
 
 async function punishLogic(reason) {
     playSound(wrongSound);
-    if (isMultiplayer) {
-        const snap = await gameRef.once('value');
-        const game = snap.val();
-        const isP1 = game.p1.uid === currentUser.uid;
-        const currentLives = isP1 ? game.p1.lives : game.p2.lives;
-        const oppUid = isP1 ? game.p2.uid : game.p1.uid;
-        
-        if (currentLives - 1 <= 0) {
-            await gameRef.update({ [`${isP1 ? 'p1' : 'p2'}/lives`]: 0, status: 'revive_pending', turn: currentUser.uid });
-        } else {
-            setSystemMessage(`strike! ${reason}`, true);
-            await gameRef.update({ [`${isP1 ? 'p1' : 'p2'}/lives`]: currentLives - 1 });
-            playerInput.disabled = false; submitBtn.disabled = false; playerInput.focus();
-            startTimer(); 
-        }
-    } else {
+    if (!isMultiplayer) {
         lives--;
         updateLivesDisplay();
         if (lives <= 0) {
@@ -1424,17 +1413,11 @@ if (topExitBtn) {
     topExitBtn.addEventListener('click', () => {
         playSound(clickSound);
         if (isMultiplayer && gameRef && currentUser) {
-            gameRef.once('value').then(snap => {
-                const game = snap.val();
-                if (game && game.status !== 'finished') {
-                    const isP1 = game.p1.uid === currentUser.uid;
-                    const oppUid = isP1 ? (game.p2 ? game.p2.uid : null) : game.p1.uid;
-                    if (oppUid) {
-                        gameRef.update({ status: 'finished', winner: oppUid, [`${isP1 ? 'p1' : 'p2'}/lives`]: 0 });
-                    } else {
-                        gameRef.update({ status: 'finished' });
-                    }
-                }
+            // security update: push exit/forfeit intent to server queue
+            db.ref(`games/${currentGameId}/moves_queue`).push({
+                action: 'forfeit',
+                uid: currentUser.uid,
+                timestamp: firebase.database.ServerValue.TIMESTAMP
             });
         } else {
             localStorage.removeItem('atlas_offline_save');
@@ -1456,8 +1439,6 @@ async function resolveFullName(queryName) {
         let searchString1 = `intitle:"${queryName}" cricketer`;
         let searchString2 = `${queryName} cricketer`;
         
-        // if easy mode and input is an initial (e.g., "i jaggi"), drop the initial from the search query 
-        // so wiki finds the surname, then the validation loop matches the initial to the real first name.
         if (currentMode === 'easy' && queryParts.length >= 2 && queryGiven.length <= 2) {
             searchString1 = `intitle:"${querySurname}" cricketer`;
             searchString2 = `${querySurname} cricketer`;
