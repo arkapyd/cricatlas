@@ -693,14 +693,30 @@ btnOffline.addEventListener('click', () => {
     
     if (typeof playerInput !== 'undefined') playerInput.value = '';
     
-    Promise.all([
-        db.ref('players').once('value'),
-        db.ref('player_meta').once('value')
-    ]).then(([playersSnap, metaSnap]) => {
-        const data = playersSnap.val();
-        if (!data) { if (typeof setSystemMessage === 'function') setSystemMessage("db error.", true); return; }
+    // player_meta is an OPTIONAL enrichment layer. it must never be able to
+    // block (or hang) the game start — if it's unreadable (e.g. db rules) or
+    // slow, we proceed with no meta and let categories resolve live instead.
+    const metaPromise = db.ref('player_meta').once('value')
+        .then(s => (s && s.val()) || {})
+        .catch(e => { console.warn('[engine] player_meta unavailable, continuing without enrichment:', e); return {}; });
 
-        const metaMap = metaSnap.val() || {};
+    // the players catalog IS required. race it against a timeout so a stalled
+    // connection surfaces an error instead of freezing on the loading screen.
+    const playersPromise = Promise.race([
+        db.ref('players').once('value'),
+        new Promise((_, reject) => setTimeout(() => reject(new Error('players read timed out')), 15000))
+    ]);
+
+    playersPromise.then(async (playersSnap) => {
+        const data = playersSnap.val();
+        if (!data) {
+            if (typeof setSystemMessage === 'function') setSystemMessage("player database is empty or unreadable. check db read rules.", true);
+            if (typeof turnIndicator !== 'undefined') { turnIndicator.textContent = "LOAD FAILED"; turnIndicator.style.color = "var(--loss)"; }
+            if (typeof statusBox !== 'undefined') statusBox.textContent = "!";
+            return;
+        }
+
+        const metaMap = await metaPromise;
 
         let sourceData = data.players ? data.players : data;
         let rawArray = Array.isArray(sourceData) ? sourceData : Object.values(sourceData);
@@ -735,6 +751,11 @@ btnOffline.addEventListener('click', () => {
             if (typeof setSystemMessage === 'function') setSystemMessage("match restored. your turn.", false);
             if (typeof startTimer === 'function') startTimer();
         }
+    }).catch(err => {
+        console.error('[engine] catalog load failed:', err);
+        if (typeof setSystemMessage === 'function') setSystemMessage("couldn't load the player database — check your connection or database read rules, then exit and retry.", true);
+        if (typeof turnIndicator !== 'undefined') { turnIndicator.textContent = "LOAD FAILED"; turnIndicator.style.color = "var(--loss)"; }
+        if (typeof statusBox !== 'undefined') statusBox.textContent = "!";
     });
 });
 
