@@ -879,6 +879,7 @@ let thinkingTimer = null;
 
 function startThinking() {
     stopThinking();
+    stopVerifying();
     const lines = shuffle(THINKING_LINES);
     let i = 0;
     turnIndicator.textContent = "CPU AT THE CREASE";
@@ -894,6 +895,40 @@ function startThinking() {
 
 function stopThinking() {
     if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; }
+}
+
+// a separate set of lines for while a PLAYER'S move is being verified, so the
+// "verifying '<name>'" state keeps moving instead of resetting to "system ready".
+const VERIFY_LINES = [
+    "checking the record books…",
+    "counting the caps…",
+    "cross-checking the averages…",
+    "consulting the scorers…",
+    "flipping through the almanack…",
+    "checking the honours board…",
+    "asking the boundary rider…",
+    "reviewing the tape…",
+    "scanning the team sheets…",
+    "confirming with the pavilion…"
+];
+
+let verifyTimer = null;
+
+function startVerifying(name) {
+    stopVerifying();
+    const lines = shuffle(VERIFY_LINES);
+    let i = 0;
+    messageEl.style.color = "var(--accent)";
+    messageEl.textContent = `// verifying '${name}' — ${lines[0]}`;
+    verifyTimer = setInterval(() => {
+        i = (i + 1) % lines.length;
+        messageEl.style.color = "var(--accent)";
+        messageEl.textContent = `// verifying '${name}' — ${lines[i]}`;
+    }, 1500);
+}
+
+function stopVerifying() {
+    if (verifyTimer) { clearInterval(verifyTimer); verifyTimer = null; }
 }
 
 // the cpu now plays against its own shot clock. if it can't produce a valid
@@ -1299,7 +1334,7 @@ async function handleMoveWrapper() {
 
     clearInterval(turnTimer);
     playerInput.disabled = true; submitBtn.disabled = true;
-    setSystemMessage(`verifying '${inputName}'...`, false);
+    startVerifying(inputName);
 
     let gameData = null;
     let isRanked = true;
@@ -1399,6 +1434,7 @@ async function handleMoveWrapper() {
     }
     cachePlayerMeta(matchedIdentifier, demo, estimateEra(extract));
 
+    stopVerifying();
     playSound(correctSound);
     
     const earnedCP = isRanked ? await awardCP(extract, demo) : 0;
@@ -1461,6 +1497,7 @@ function renderFeedItem(displayName, extract, isMe, cpEarned) {
 }
 
 function setSystemMessage(msg, isError = true) {
+    stopVerifying();
     messageEl.style.color = isError ? "var(--loss)" : "var(--accent)";
     messageEl.textContent = `// ${msg}`;
     setTimeout(() => {
@@ -1560,7 +1597,7 @@ if (topExitBtn) {
 }
 
 async function resolveFullName(queryName) {
-    const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=5&prop=extracts&exintro=1&explaintext=1`)).json();
+    const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=10&prop=extracts&exintro=1&explaintext=1`)).json();
     
     const queryNameLower = queryName.trim().toLowerCase();
     const queryParts = queryNameLower.split(/\s+/);
@@ -1582,6 +1619,11 @@ async function resolveFullName(queryName) {
             data = await fetchWiki(encodeURIComponent(searchString2)); 
             pages = data.query && data.query.pages ? Object.values(data.query.pages) : []; 
         }
+
+        // Object.values orders by pageid, not search relevance — restore the
+        // generator's ranking so the most prominent cricketer (e.g. Ajinkya
+        // Rahane for "a rahane") is considered first instead of an arbitrary one.
+        pages.sort((a, b) => (a.index || 0) - (b.index || 0));
         
         // strips accents AND punctuation (apostrophes/hyphens/dots) so
         // "d'arcy" matches "darcy", "o'brien" matches "obrien", etc.
