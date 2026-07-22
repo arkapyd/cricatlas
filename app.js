@@ -878,10 +878,48 @@ function stopThinking() {
     if (thinkingTimer) { clearInterval(thinkingTimer); thinkingTimer = null; }
 }
 
+// the cpu now plays against its own shot clock. if it can't produce a valid
+// move inside the budget for the current difficulty, it forfeits and you win.
+const CPU_TIME_BUDGET = { easy: 20, medium: 35, hard: 60 };
+let cpuCountdownTimer = null;
+
+function startCpuCountdown(seconds) {
+    stopCpuCountdown();
+    let remaining = seconds;
+    timerDisplay.textContent = remaining;
+    timerDisplay.classList.remove('timer-danger');
+    cpuCountdownTimer = setInterval(() => {
+        remaining--;
+        timerDisplay.textContent = Math.max(0, remaining);
+        if (remaining <= 5) timerDisplay.classList.add('timer-danger');
+        if (remaining <= 0) stopCpuCountdown();
+    }, 1000);
+}
+
+function stopCpuCountdown() {
+    if (cpuCountdownTimer) { clearInterval(cpuCountdownTimer); cpuCountdownTimer = null; }
+    timerDisplay.classList.remove('timer-danger');
+}
+
+// resolves with { __timeout: true } if the wrapped promise doesn't settle in
+// time — so a single stalled network lookup can't run past the cpu's clock.
+function withDeadline(promise, ms) {
+    return Promise.race([
+        promise,
+        new Promise(resolve => setTimeout(() => resolve({ __timeout: true }), Math.max(0, ms)))
+    ]);
+}
+
 async function computerTurn() {
     stopTimer();
     startThinking();
     playerInput.disabled = true; submitBtn.disabled = true;
+
+    // cpu shot clock for this difficulty
+    const budgetSecs = CPU_TIME_BUDGET[currentMode] || 20;
+    const deadline = Date.now() + budgetSecs * 1000;
+    startCpuCountdown(budgetSecs);
+    let timedOut = false;
 
     let pool = playersCatalog.filter(p =>
         !usedPlayers.has(p.full_name) && !usedPlayers.has(p.unique_name) &&
@@ -902,10 +940,12 @@ async function computerTurn() {
     const MAX_ATTEMPTS = 15; 
 
     while (pool.length > 0 && !foundValid && attempts < MAX_ATTEMPTS) {
+        if (Date.now() >= deadline) { timedOut = true; break; }
         selected = pool.shift();
         attempts++;
 
-        const wikiData = await resolveFullName(selected.unique_name || selected.name);
+        const wikiData = await withDeadline(resolveFullName(selected.unique_name || selected.name), deadline - Date.now());
+        if (wikiData.__timeout) { timedOut = true; break; }
         trueFullName = wikiData.resolved;
         extract = wikiData.extract;
         const formats = getNameFormats(trueFullName, wikiData.isUnresolved);
@@ -930,13 +970,17 @@ async function computerTurn() {
     }
 
     stopThinking();
+    stopCpuCountdown();
 
     if (!foundValid) {
         turnIndicator.textContent = "VICTORY";
         turnIndicator.style.color = "var(--win)";
-        setSystemMessage(currentCategory !== 'general'
-            ? `cpu couldn't find a valid ${currentCategory} name. you win!`
-            : "cpu exhausted options. you win!", false);
+        const reason = timedOut
+            ? `cpu ran out of time (${budgetSecs}s). you win!`
+            : (currentCategory !== 'general'
+                ? `cpu couldn't find a valid ${currentCategory} name. you win!`
+                : "cpu exhausted options. you win!");
+        setSystemMessage(reason, false);
         triggerGameOver(false, null);
         return;
     }
@@ -1356,7 +1400,10 @@ function renderFeedItem(displayName, extract, isMe, cpEarned) {
     
     const demo = scanDemographics(extract);
     const summaryText = extract ? extract.split('\n')[0] : `${displayName.toUpperCase()} is a professional cricketer recognized in the competitive sports registry.`;
-    const summaryHtml = `<div class="player-badges">${demo.isIntl ? '<span class="badge intl">intl</span>' : '<span class="badge">domestic</span>'}</div><div class="player-summary">${summaryText}</div>`;
+    const badgeLabel = demo.isIntl ? '<span class="badge intl">intl</span>'
+        : (demo.isDomestic ? '<span class="badge">domestic</span>'
+        : '<span class="badge">cricketer</span>');
+    const summaryHtml = `<div class="player-badges">${badgeLabel}</div><div class="player-summary">${summaryText}</div>`;
     
     let cpText = isMe && cpEarned > 0 ? `<div class="feed-earned-cp">+${cpEarned} CP</div>` : `<div></div>`;
 
@@ -1381,25 +1428,41 @@ function getLastLetterOfSurname(name) {
 }
 
 function scanDemographics(extract) {
-    if (!extract) return { isIntl: false, isWomen: false, isMen: false };
+    if (!extract) return { isIntl: false, isWomen: false, isMen: false, isDomestic: false };
     const l = extract.toLowerCase();
-    
-    const isIntl = l.includes('international') || 
-                   l.includes('test match') || 
-                   l.includes('test cricketer') ||
-                   l.includes('odi') || 
-                   l.includes('t20i') || 
-                   l.includes('national team') ||
-                   l.includes('cricket team') ||
-                   l.includes('squad') ||
-                   l.includes('asia cup') ||
-                   l.includes('world cup') ||
-                   l.includes('represented'); 
-                   
-    const isWomen = /\b(she|her)\b/i.test(l) || l.includes("women's");
+
+    // International signals. Phrase-based and word-bounded to avoid the old
+    // false positives: "represented Assam" / "Ranji squad" (domestic) and
+    // "Odisha" (which literally contains "odi").
+    const isIntl =
+        l.includes('international') ||
+        l.includes('test match') ||
+        l.includes('test cricketer') ||
+        l.includes('test debut') ||
+        l.includes('one day international') ||
+        l.includes('twenty20 international') ||
+        l.includes('national cricket team') ||
+        l.includes('national team') ||
+        l.includes('world cup') ||
+        l.includes('champions trophy') ||
+        l.includes('asia cup') ||
+        l.includes('icc ') ||
+        /\bodis?\b/.test(l) ||
+        /\bt20is?\b/.test(l) ||
+        /\btests?\b/.test(l);
+
+    // Positive domestic evidence — only meaningful when NOT international, since
+    // international players play these competitions too. Lets the badge say
+    // "domestic" from real evidence instead of merely "no intl keyword found".
+    const domesticPhrases = ['first-class', 'list a', 'ranji', 'vijay hazare',
+        'syed mushtaq ali', 'duleep', 'deodhar', 'county championship',
+        'sheffield shield', 'plunket shield', 'domestic cricket', 'big bash', 'super smash'];
+    const isDomestic = !isIntl && domesticPhrases.some(p => l.includes(p));
+
+    const isWomen = /\b(she|her)\b/i.test(l) || l.includes("women's") || l.includes("women\u2019s");
     const isMen = /\b(he|his)\b/i.test(l) || l.includes("men's");
-    
-    return { isIntl, isWomen, isMen };
+
+    return { isIntl, isWomen, isMen, isDomestic };
 }
 
 function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
