@@ -898,7 +898,7 @@ function stopThinking() {
 
 // the cpu now plays against its own shot clock. if it can't produce a valid
 // move inside the budget for the current difficulty, it forfeits and you win.
-const CPU_TIME_BUDGET = { easy: 28, medium: 49, hard: 84 };
+const CPU_TIME_BUDGET = { easy: 50, medium: 100, hard: Infinity };
 let cpuCountdownTimer = null;
 // the very first cpu move after a cold boot is slow (warming up network +
 // wikipedia lookups), so its shot clock is not enforced. every move after is.
@@ -936,11 +936,11 @@ async function computerTurn() {
     startThinking();
     playerInput.disabled = true; submitBtn.disabled = true;
 
-    // cpu shot clock — not enforced on the very first move (cold-start latency),
-    // enforced on every move after that
-    const enforceClock = cpuClockArmed;
+    // cpu shot clock — not enforced on the very first move (cold-start latency)
+    // or when the budget is infinite (hard mode). enforced otherwise.
+    const budgetSecs = CPU_TIME_BUDGET[currentMode] || 50;
+    const enforceClock = cpuClockArmed && Number.isFinite(budgetSecs);
     cpuClockArmed = true;
-    const budgetSecs = CPU_TIME_BUDGET[currentMode] || 20;
     const deadline = enforceClock ? Date.now() + budgetSecs * 1000 : Infinity;
     if (enforceClock) startCpuCountdown(budgetSecs);
     let timedOut = false;
