@@ -633,26 +633,26 @@ tabBtns.forEach(btn => {
 
 const careerTiers = [
     { name: "gully cricketer", threshold: 0 },
-    { name: "school cricketer", threshold: 50 },
-    { name: "school captain", threshold: 100 },
-    { name: "local club cricketer", threshold: 150 },
-    { name: "local club captain", threshold: 200 },
-    { name: "city cricketer", threshold: 250 },
-    { name: "city captain", threshold: 300 },
-    { name: "district cricketer", threshold: 400 },
-    { name: "district captain", threshold: 500 },
-    { name: "state franchise cricketer", threshold: 600 },
-    { name: "state franchise captain", threshold: 700 },
-    { name: "state team cricketer", threshold: 850 },
-    { name: "state team captain", threshold: 1000 },
-    { name: "zonal team cricketer", threshold: 1150 },
-    { name: "zonal team captain", threshold: 1300 },
-    { name: "national franchise cricketer", threshold: 1500 },
-    { name: "national franchise captain", threshold: 1700 },
-    { name: "international franchise cricketer", threshold: 1900 },
-    { name: "international franchise captain", threshold: 2100 },
-    { name: "national team player", threshold: 2500 },
-    { name: "national team captain", threshold: 2900 }
+    { name: "school cricketer", threshold: 150 },
+    { name: "school captain", threshold: 300 },
+    { name: "local club cricketer", threshold: 450 },
+    { name: "local club captain", threshold: 600 },
+    { name: "city cricketer", threshold: 750 },
+    { name: "city captain", threshold: 900 },
+    { name: "district cricketer", threshold: 1200 },
+    { name: "district captain", threshold: 1500 },
+    { name: "state franchise cricketer", threshold: 1800 },
+    { name: "state franchise captain", threshold: 2100 },
+    { name: "state team cricketer", threshold: 2550 },
+    { name: "state team captain", threshold: 3000 },
+    { name: "zonal team cricketer", threshold: 3450 },
+    { name: "zonal team captain", threshold: 3900 },
+    { name: "national franchise cricketer", threshold: 4500 },
+    { name: "national franchise captain", threshold: 5100 },
+    { name: "international franchise cricketer", threshold: 5700 },
+    { name: "international franchise captain", threshold: 6300 },
+    { name: "national team player", threshold: 7500 },
+    { name: "national team captain", threshold: 8700 }
 ];
 
 function updateCareerDisplay(totalCp) {
@@ -1671,6 +1671,10 @@ async function resolveFullName(queryName, fast = false) {
         // strips accents AND punctuation (apostrophes/hyphens/dots) so
         // "d'arcy" matches "darcy", "o'brien" matches "obrien", etc.
         const normName = s => (s || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").replace(/['\u2019.\-]/g, "").toLowerCase();
+        // collapses a whole name to bare alphanumerics (drops spaces, hyphens,
+        // particles) so "Naveen-ul-Haq" == "naveen ul haq", "Jean-Paul" == "jean paul".
+        const normFull = s => (s || '').normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase().replace(/[^a-z0-9]/g, "");
+        const queryFull = normFull(queryName);
 
         for (let pageData of pages) {
             const titleLower = pageData.title.toLowerCase();
@@ -1679,10 +1683,18 @@ async function resolveFullName(queryName, fast = false) {
             const extract = pageData.extract || "";
             const extractLower = extract.toLowerCase();
 
-            if (extractLower.includes("may refer to:") || extractLower.includes("is a disambiguation page")) continue;
-            // reject name/etymology articles (e.g. "Ramesh is a male given name...")
-            if (extractLower.includes("given name") || extractLower.includes("is a surname") ||
-                extractLower.includes("is a family name") || extractLower.includes("is a unisex name")) continue;
+            // Skip disambiguation and name/surname articles — even when their
+            // "Notable people" list mentions cricket (e.g. "Tsotsobe is a South
+            // African Xhosa surname. Notable people with the surname include:").
+            if (extractLower.includes("may refer to") ||
+                extractLower.includes("is a disambiguation page") ||
+                /\bis a[n]? [\w\s'-]*?(given name|surname|family name|unisex name)\b/.test(extractLower) ||
+                extractLower.includes("people with the surname") ||
+                extractLower.includes("people with this name") ||
+                extractLower.includes("people with the name")) continue;
+
+            const hasCricketKeywords = extractLower.includes("cricket") || extractLower.includes("batsman") || extractLower.includes("bowler") || extractLower.includes("wicket-keeper") || extractLower.includes("all-rounder");
+            if (!hasCricketKeywords) continue;
 
             const title = pageData.title.replace(/\s*\(.*\)/, '').trim().toLowerCase();
             const titleParts = title.split(/\s+/);
@@ -1693,14 +1705,19 @@ async function resolveFullName(queryName, fast = false) {
             const normQuerySurname = normName(querySurname);
             const normTitleGiven = normName(titleGiven);
             const normQueryGiven = normName(queryGiven);
+            const titleFull = normFull(title);
 
-            const hasCricketKeywords = extractLower.includes("cricket") || extractLower.includes("batsman") || extractLower.includes("bowler") || extractLower.includes("wicket-keeper") || extractLower.includes("all-rounder");
+            // (a) full-name match ignoring spaces/hyphens (handles particle names
+            //     like Naveen-ul-Haq, and full names like "Naveen-ul-Haq Murid").
+            const fullMatch = titleFull === queryFull || (queryFull.length >= 8 && titleFull.startsWith(queryFull));
+            // (b) surname + given-initial match. requires a non-empty given name so
+            //     bare single-token pages (surname articles) can't match on "".
+            const surnameGivenMatch = normTitleSurname === normQuerySurname && normTitleGiven !== '' &&
+                (normTitleGiven.startsWith(normQueryGiven) || normQueryGiven.startsWith(normTitleGiven));
 
-            if (hasCricketKeywords && normTitleSurname === normQuerySurname) {
-                if (normTitleGiven.startsWith(normQueryGiven) || normQueryGiven.startsWith(normTitleGiven)) {
-                    const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
-                    return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
-                }
+            if (fullMatch || surnameGivenMatch) {
+                const match = extract.split(/[.!?]/)[0].match(/^([^\(\,]+)(?:\(|\,)/);
+                return { resolved: match ? match[1].trim().toLowerCase() : title, extract: extract, isUnresolved: false };
             }
         }
 
