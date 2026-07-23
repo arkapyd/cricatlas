@@ -225,6 +225,7 @@ auth.onAuthStateChanged(user => {
             totalUserCP = snap.val() || 0;
             userCpDisplay.textContent = `${parseFloat(totalUserCP).toFixed(1)} CP`;
             updateCareerDisplay(totalUserCP);
+            applyModeLocks(totalUserCP);
         });
 
         authView.style.display = 'none';
@@ -332,16 +333,42 @@ diffTabs.forEach(tab => tab.addEventListener('click', (e) => {
 }));
 
 catTabs.forEach(tab => tab.addEventListener('click', (e) => {
+    const btn = e.currentTarget;
+    const cat = (btn.getAttribute('data-category') || btn.textContent).toLowerCase().replace(' only', '').trim();
+
+    if (btn.classList.contains('locked') || !isModeUnlocked(cat, totalUserCP)) {
+        playSound(wrongSound);
+        showModeLockHint(cat);
+        return;
+    }
+
     playSound(clickSound);
     catTabs.forEach(t => t.classList.remove('active')); 
-    e.currentTarget.classList.add('active');
-    
-    let val = e.currentTarget.getAttribute('data-category');
-    if (!val) val = e.currentTarget.textContent;
-    currentCategory = val.toLowerCase().replace(' only', '').trim(); 
-    
+    btn.classList.add('active');
+    currentCategory = cat; 
     updateHelpText();
 }));
+
+// --- career-path modal (tap the career card to see the full ladder) ---
+const careerCard = document.querySelector('.career');
+const careerModal = document.getElementById('career-modal');
+const careerModalClose = document.getElementById('career-modal-close');
+
+function openCareerModal() {
+    playSound(clickSound);
+    renderCareerLadder(totalUserCP);
+    if (careerModal) careerModal.classList.remove('hide-element');
+}
+function closeCareerModal() {
+    playSound(clickSound);
+    if (careerModal) careerModal.classList.add('hide-element');
+}
+if (careerCard) careerCard.addEventListener('click', openCareerModal);
+if (careerModalClose) careerModalClose.addEventListener('click', closeCareerModal);
+if (careerModal) careerModal.addEventListener('click', (e) => { if (e.target === careerModal) closeCareerModal(); });
+
+// apply lock states immediately (Firebase CP arrives shortly after and re-applies)
+applyModeLocks(totalUserCP);
 
 if (leaveGameBtn) {
     leaveGameBtn.addEventListener('click', () => {
@@ -655,6 +682,78 @@ const careerTiers = [
     { name: "national team captain", threshold: 8700 }
 ];
 
+// --- special modes gated behind career progression ---
+// general is always available; these unlock at the listed career tier / CP.
+const MODE_UNLOCKS = {
+    women:    { threshold: 300,  tier: "school captain" },
+    men:      { threshold: 600,  tier: "local club captain" },
+    domestic: { threshold: 1500, tier: "district captain" },
+    intl:     { threshold: 2100, tier: "state franchise captain" }
+};
+const MODE_LABELS = { women: "Women only", men: "Men only", domestic: "Domestic only", intl: "International only" };
+
+function isModeUnlocked(cat, cp) {
+    const req = MODE_UNLOCKS[cat];
+    if (!req) return true; // general + anything ungated
+    return (cp || 0) >= req.threshold;
+}
+
+function showModeLockHint(cat) {
+    const req = MODE_UNLOCKS[cat];
+    const help = document.getElementById('mode-help-text');
+    if (!req || !help) return;
+    help.style.opacity = '0';
+    setTimeout(() => {
+        help.innerHTML = `<span>\uD83D\uDD12 locked:</span> ${MODE_LABELS[cat]} unlocks at ${req.tier} (${req.threshold} CP).`;
+        help.style.opacity = '1';
+    }, 120);
+}
+
+function applyModeLocks(cp) {
+    document.querySelectorAll('.cat-btn').forEach(btn => {
+        const cat = (btn.getAttribute('data-category') || btn.textContent).toLowerCase().replace(' only', '').trim();
+        btn.classList.toggle('locked', !isModeUnlocked(cat, cp));
+    });
+    // if the currently-selected category just became (or is) locked, fall back to general
+    if (!isModeUnlocked(currentCategory, cp)) {
+        currentCategory = 'general';
+        document.querySelectorAll('.cat-btn').forEach(b =>
+            b.classList.toggle('active', (b.getAttribute('data-category') || '').toLowerCase() === 'general'));
+        if (typeof updateHelpText === 'function') updateHelpText();
+    }
+}
+
+function renderCareerLadder(cp) {
+    const ladder = document.getElementById('career-ladder');
+    if (!ladder) return;
+
+    let curIdx = 0;
+    for (let i = 0; i < careerTiers.length; i++) {
+        if (cp >= careerTiers[i].threshold) curIdx = i; else break;
+    }
+
+    const unlockByThreshold = {};
+    Object.entries(MODE_UNLOCKS).forEach(([mode, r]) => { unlockByThreshold[r.threshold] = mode; });
+
+    ladder.innerHTML = careerTiers.map((tier, i) => {
+        const reached = cp >= tier.threshold;
+        const isCurrent = i === curIdx;
+        const mode = unlockByThreshold[tier.threshold];
+        const badge = mode
+            ? `<span class="ladder-unlock ${reached ? 'got' : ''}">${reached ? '\uD83D\uDD13' : '\uD83D\uDD12'} ${MODE_LABELS[mode]}</span>`
+            : '';
+        return `<div class="ladder-row ${reached ? 'reached' : 'locked'} ${isCurrent ? 'current' : ''}">
+            <div class="ladder-main">
+                <span class="ladder-name">${tier.name}</span>
+                <span class="ladder-cp">${tier.threshold} CP</span>
+            </div>${badge}
+        </div>`;
+    }).join('');
+
+    const curEl = ladder.querySelector('.ladder-row.current');
+    if (curEl) setTimeout(() => { try { curEl.scrollIntoView({ block: 'center' }); } catch (e) {} }, 60);
+}
+
 function updateCareerDisplay(totalCp) {
     let currentTierIndex = 0;
     
@@ -688,6 +787,20 @@ function updateCareerDisplay(totalCp) {
         document.getElementById('next-rank-title').textContent = "max rank reached";
         document.getElementById('cp-remaining-text').textContent = "";
     }
+
+    // does the next level unlock a special mode?
+    const unlockNote = document.getElementById('next-unlock-note');
+    if (unlockNote) {
+        const nextUnlock = nextTier
+            ? Object.entries(MODE_UNLOCKS).find(([, r]) => r.threshold === nextTier.threshold)
+            : null;
+        if (nextUnlock) {
+            unlockNote.textContent = `\uD83D\uDD13 Next level unlocks ${MODE_LABELS[nextUnlock[0]]}`;
+            unlockNote.classList.remove('hide-element');
+        } else {
+            unlockNote.classList.add('hide-element');
+        }
+    }
 }
 
 function updateLivesDisplay() {
@@ -701,7 +814,10 @@ btnOffline.addEventListener('click', () => {
     
     const modeMap = { 'med': 'medium', 'medium': 'medium', 'hard': 'hard', 'easy': 'easy' };
     const catMap = { 'gen': 'general', 'general': 'general', 'intl': 'international', 'international': 'international', 'dom': 'domestic', 'domestic': 'domestic', 'men': 'men', 'wmn': 'women', 'women': 'women' };
-    
+
+    // a locked mode can never be played — fall back to general
+    if (!isModeUnlocked(currentCategory, totalUserCP)) currentCategory = 'general';
+
     currentMode = modeMap[(currentMode || '').toLowerCase().trim()] || 'easy';
     currentCategory = catMap[(currentCategory || '').toLowerCase().trim()] || 'general';
 
