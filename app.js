@@ -367,6 +367,29 @@ if (careerCard) careerCard.addEventListener('click', openCareerModal);
 if (careerModalClose) careerModalClose.addEventListener('click', closeCareerModal);
 if (careerModal) careerModal.addEventListener('click', (e) => { if (e.target === careerModal) closeCareerModal(); });
 
+// --- reset career progress (with confirmation) ---
+const resetCareerBtn = document.getElementById('reset-career-btn');
+const resetConfirmModal = document.getElementById('reset-confirm-modal');
+const resetNoBtn = document.getElementById('reset-no-btn');
+const resetYesBtn = document.getElementById('reset-yes-btn');
+
+if (resetCareerBtn) resetCareerBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    if (resetConfirmModal) resetConfirmModal.classList.remove('hide-element');
+});
+if (resetNoBtn) resetNoBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    if (resetConfirmModal) resetConfirmModal.classList.add('hide-element');
+});
+if (resetYesBtn) resetYesBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    if (resetConfirmModal) resetConfirmModal.classList.add('hide-element');
+    resetCareerProgress();
+});
+if (resetConfirmModal) resetConfirmModal.addEventListener('click', (e) => {
+    if (e.target === resetConfirmModal) resetConfirmModal.classList.add('hide-element');
+});
+
 if (leaveGameBtn) {
     leaveGameBtn.addEventListener('click', () => {
         playSound(clickSound);
@@ -718,6 +741,22 @@ function applyModeLocks(cp) {
             b.classList.toggle('active', (b.getAttribute('data-category') || '').toLowerCase() === 'general'));
         if (typeof updateHelpText === 'function') updateHelpText();
     }
+}
+
+// wipes career progress: CP back to 0, rank reset, special modes re-locked.
+// attempts a server write (best-effort — may be blocked by db rules) and always
+// resets the local UI so the change is immediate.
+function resetCareerProgress() {
+    if (currentUser) {
+        db.ref(`users/${currentUser.uid}/cp`).set(0)
+            .catch(e => console.warn('[engine] cp reset write failed (db rules?):', e));
+    }
+    totalUserCP = 0;
+    if (userCpDisplay) userCpDisplay.textContent = '0.0 CP';
+    currentCategory = 'general';
+    updateCareerDisplay(0);
+    applyModeLocks(0);
+    if (typeof setSystemMessage === 'function') { /* no-op on menu */ }
 }
 
 function renderCareerLadder(cp) {
