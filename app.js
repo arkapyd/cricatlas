@@ -657,35 +657,35 @@ tabBtns.forEach(btn => {
 
 const careerTiers = [
     { name: "gully cricketer", threshold: 0 },
-    { name: "school cricketer", threshold: 150 },
-    { name: "school captain", threshold: 300 },
-    { name: "local club cricketer", threshold: 450 },
-    { name: "local club captain", threshold: 600 },
-    { name: "city cricketer", threshold: 750 },
-    { name: "city captain", threshold: 900 },
-    { name: "district cricketer", threshold: 1200 },
-    { name: "district captain", threshold: 1500 },
-    { name: "state franchise cricketer", threshold: 1800 },
-    { name: "state franchise captain", threshold: 2100 },
-    { name: "state team cricketer", threshold: 2550 },
-    { name: "state team captain", threshold: 3000 },
-    { name: "zonal team cricketer", threshold: 3450 },
-    { name: "zonal team captain", threshold: 3900 },
-    { name: "national franchise cricketer", threshold: 4500 },
-    { name: "national franchise captain", threshold: 5100 },
-    { name: "international franchise cricketer", threshold: 5700 },
-    { name: "international franchise captain", threshold: 6300 },
-    { name: "national team player", threshold: 7500 },
-    { name: "national team captain", threshold: 8700 }
+    { name: "school cricketer", threshold: 25 },
+    { name: "school captain", threshold: 60 },
+    { name: "local club cricketer", threshold: 110 },
+    { name: "local club captain", threshold: 180 },
+    { name: "city cricketer", threshold: 280 },
+    { name: "city captain", threshold: 420 },
+    { name: "district cricketer", threshold: 600 },
+    { name: "district captain", threshold: 850 },
+    { name: "state franchise cricketer", threshold: 1200 },
+    { name: "state franchise captain", threshold: 1650 },
+    { name: "state team cricketer", threshold: 2200 },
+    { name: "state team captain", threshold: 2900 },
+    { name: "zonal team cricketer", threshold: 3750 },
+    { name: "zonal team captain", threshold: 4700 },
+    { name: "national franchise cricketer", threshold: 5750 },
+    { name: "national franchise captain", threshold: 6850 },
+    { name: "international franchise cricketer", threshold: 7950 },
+    { name: "international franchise captain", threshold: 8900 },
+    { name: "national team player", threshold: 9450 },
+    { name: "national team captain", threshold: 10000 }
 ];
 
 // --- special modes gated behind career progression ---
 // general is always available; these unlock at the listed career tier / CP.
 const MODE_UNLOCKS = {
-    women:    { threshold: 300,  tier: "school captain" },
-    men:      { threshold: 600,  tier: "local club captain" },
-    domestic: { threshold: 1500, tier: "district captain" },
-    intl:     { threshold: 2100, tier: "state franchise captain" }
+    women:    { threshold: 60,   tier: "school captain" },
+    men:      { threshold: 180,  tier: "local club captain" },
+    domestic: { threshold: 850,  tier: "district captain" },
+    intl:     { threshold: 1650, tier: "state franchise captain" }
 };
 const MODE_LABELS = { women: "Women only", men: "Men only", domestic: "Domestic only", intl: "International only" };
 
