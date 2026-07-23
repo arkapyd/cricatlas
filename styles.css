@@ -411,7 +411,7 @@ body {
     background: linear-gradient(180deg, var(--crimson-hi), var(--crimson));
     box-shadow: 0 2px 8px -2px var(--crimson-glow);
 }
-.pills { display: flex; flex-wrap: wrap; gap: 8px; }
+.pills { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .cat-btn {
     background: var(--card);
     border: 1px solid var(--stroke);
@@ -419,11 +419,13 @@ body {
     font-family: 'Outfit', sans-serif;
     font-weight: 600;
     font-size: .82rem;
-    padding: 8px 14px;
+    padding: 9px 10px;
     border-radius: 999px;
     cursor: pointer;
     transition: all .16s var(--ease);
     -webkit-tap-highlight-color: transparent;
+    text-align: center;
+    white-space: nowrap;
 }
 .cat-btn:hover { border-color: var(--crimson); }
 .cat-btn.active {
@@ -446,6 +448,19 @@ body {
     transition: opacity .2s var(--ease);
 }
 .mode-help span { color: var(--crimson); font-weight: 700; text-transform: capitalize; }
+
+.reset-career-btn {
+    margin-top: 16px;
+    width: 100%;
+    background: transparent;
+    border: 1px solid var(--loss);
+    color: var(--loss);
+    box-shadow: none;
+    font-size: .82rem;
+    padding: 11px;
+}
+.reset-career-btn:hover:not(:disabled) { background: rgba(198, 40, 40, .08); border-color: var(--loss); }
+.reset-career-btn:active:not(:disabled) { transform: translateY(2px); box-shadow: none; }
 
 /* ---------- lobby ---------- */
 .lobby-card { text-align: center; }
