@@ -630,6 +630,81 @@ body {
 .modal-row { display: flex; gap: 12px; margin-top: 22px; }
 .modal-row .btn { flex: 1; }
 
+/* ---------- locked special modes ---------- */
+.cat-btn.locked {
+    opacity: .5;
+    color: var(--ink-mute);
+    background: var(--paper-2);
+    cursor: not-allowed;
+}
+.cat-btn.locked::after { content: " 🔒"; font-size: .82em; }
+.cat-btn.locked:hover { border-color: var(--stroke); }
+.cat-btn.locked.active { background: var(--paper-2); color: var(--ink-mute); box-shadow: none; }
+
+/* ---------- career: tap cue + next-unlock note ---------- */
+.career { cursor: pointer; border-radius: 14px; transition: background .15s var(--ease); }
+.career:hover { background: var(--crimson-soft); }
+.next-unlock {
+    margin-top: 10px;
+    font-size: .8rem;
+    font-weight: 700;
+    color: var(--green);
+}
+.career-path-cue {
+    margin-top: 12px;
+    font-size: .76rem;
+    font-weight: 800;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    color: var(--crimson);
+}
+
+/* ---------- career path modal (ladder) ---------- */
+.career-modal-box { max-width: 400px; }
+.career-ladder {
+    max-height: 56vh;
+    overflow-y: auto;
+    margin: 10px 0 18px;
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    text-align: left;
+    padding-right: 4px;
+}
+.career-ladder::-webkit-scrollbar { width: 6px; }
+.career-ladder::-webkit-scrollbar-thumb { background: var(--stroke); border-radius: 3px; }
+.ladder-row {
+    padding: 10px 13px;
+    border-radius: 11px;
+    border: 1px solid var(--stroke);
+    background: var(--paper);
+}
+.ladder-row.reached { background: var(--card); }
+.ladder-row.locked { opacity: .5; }
+.ladder-row.current {
+    border-color: var(--crimson);
+    background: var(--crimson-soft);
+    box-shadow: inset 0 0 0 1px var(--crimson);
+    opacity: 1;
+}
+.ladder-main { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+.ladder-name {
+    font-family: 'Anton', sans-serif;
+    font-size: 1rem;
+    letter-spacing: .5px;
+    text-transform: uppercase;
+    color: var(--ink);
+}
+.ladder-cp { font-size: .76rem; font-weight: 700; color: var(--ink-mute); font-variant-numeric: tabular-nums; }
+.ladder-unlock {
+    display: inline-block;
+    margin-top: 6px;
+    font-size: .72rem;
+    font-weight: 700;
+    color: var(--ink-mute);
+}
+.ladder-unlock.got { color: var(--green); }
+
 /* ---------- utilities ---------- */
 .hide-element { display: none !important; }
 :focus-visible { outline: 2px solid var(--crimson); outline-offset: 2px; border-radius: 6px; }
