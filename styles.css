@@ -321,6 +321,32 @@ body {
 }
 .rules b { color: var(--ink); font-weight: 700; }
 
+/* work-in-progress advisory */
+.advisory {
+    margin-top: 16px;
+    padding: 14px 16px;
+    background: var(--crimson-soft);
+    border: 1px solid var(--stroke);
+    border-left: 3px solid var(--crimson);
+    border-radius: 10px;
+}
+.advisory-title {
+    font-size: .74rem;
+    font-weight: 800;
+    letter-spacing: .4px;
+    text-transform: uppercase;
+    color: var(--crimson);
+    margin-bottom: 8px;
+}
+.advisory p {
+    font-size: .8rem;
+    line-height: 1.5;
+    color: var(--ink-dim);
+    margin-bottom: 7px;
+}
+.advisory p:last-child { margin-bottom: 0; }
+.advisory b { color: var(--ink); font-weight: 700; }
+
 /* career */
 .career { text-align: center; padding: 4px 0; }
 .career-rank {
