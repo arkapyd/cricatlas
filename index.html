@@ -159,6 +159,7 @@
                                 <p id="mode-help-text" class="mode-help">
                                     <span>Easy · General</span> Standard name chain. Initials accepted.
                                 </p>
+                                <button id="reset-career-btn" class="btn reset-career-btn">Reset career progress</button>
                             </div>
                         </div>
                     </div>
@@ -252,6 +253,18 @@
                         </div>
                     </div>
                 </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- reset career confirm modal -->
+    <div id="reset-confirm-modal" class="modal-overlay hide-element">
+        <div class="modal-box">
+            <h3 class="modal-title">Reset career?</h3>
+            <p class="modal-text">This resets your CP and rank to zero and re-locks the special modes. It can't be undone.</p>
+            <div class="modal-row">
+                <button id="reset-no-btn" class="btn btn-ghost">Cancel</button>
+                <button id="reset-yes-btn" class="btn btn-danger">Reset</button>
             </div>
         </div>
     </div>
