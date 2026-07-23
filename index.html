@@ -123,8 +123,10 @@
                                     <div class="track"><div id="career-progress-fill" class="track-fill"></div></div>
                                     <div class="career-next">
                                         Next: <span id="next-rank-title">school cricketer</span>
-                                        <span id="cp-remaining-text">(50 CP needed)</span>
+                                        <span id="cp-remaining-text">(150 CP needed)</span>
                                     </div>
+                                    <div id="next-unlock-note" class="next-unlock hide-element"></div>
+                                    <div class="career-path-cue">🏆 Tap to view full career path</div>
                                 </div>
                             </div>
 
@@ -245,6 +247,16 @@
                     </div>
                 </div>
             </div>
+        </div>
+    </div>
+
+    <!-- career path modal -->
+    <div id="career-modal" class="modal-overlay hide-element">
+        <div class="modal-box career-modal-box">
+            <h3 class="modal-title">Career Path</h3>
+            <p class="modal-text">Earn CP to climb the ranks. Some modes unlock as you rise.</p>
+            <div id="career-ladder" class="career-ladder"></div>
+            <button id="career-modal-close" class="btn btn-primary btn-block">Close</button>
         </div>
     </div>
 
