@@ -367,9 +367,6 @@ if (careerCard) careerCard.addEventListener('click', openCareerModal);
 if (careerModalClose) careerModalClose.addEventListener('click', closeCareerModal);
 if (careerModal) careerModal.addEventListener('click', (e) => { if (e.target === careerModal) closeCareerModal(); });
 
-// apply lock states immediately (Firebase CP arrives shortly after and re-applies)
-applyModeLocks(totalUserCP);
-
 if (leaveGameBtn) {
     leaveGameBtn.addEventListener('click', () => {
         playSound(clickSound);
@@ -1873,3 +1870,7 @@ async function resolveFullName(queryName, fast = false) {
     
     return { resolved: queryNameLower, extract: null, isUnresolved: true };
 }
+
+// initial mode-lock state — runs after all const definitions are initialized,
+// so it can't hit the temporal-dead-zone. Firebase CP re-applies on load.
+try { applyModeLocks(totalUserCP); } catch (e) { console.warn('[engine] initial lock apply failed:', e); }
