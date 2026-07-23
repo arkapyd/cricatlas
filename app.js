@@ -744,19 +744,43 @@ function applyModeLocks(cp) {
 }
 
 // wipes career progress: CP back to 0, rank reset, special modes re-locked.
-// attempts a server write (best-effort — may be blocked by db rules) and always
-// resets the local UI so the change is immediate.
+// resets the local UI immediately, then wipes the value from the cloud and
+// reports whether that write actually landed (a silent db-rules block would
+// otherwise leave the old CP intact on next load).
 function resetCareerProgress() {
-    if (currentUser) {
-        db.ref(`users/${currentUser.uid}/cp`).set(0)
-            .catch(e => console.warn('[engine] cp reset write failed (db rules?):', e));
-    }
     totalUserCP = 0;
     if (userCpDisplay) userCpDisplay.textContent = '0.0 CP';
     currentCategory = 'general';
     updateCareerDisplay(0);
     applyModeLocks(0);
-    if (typeof setSystemMessage === 'function') { /* no-op on menu */ }
+
+    if (!currentUser) { showResetStatus("signed out \u2014 nothing to reset", false); return; }
+
+    showResetStatus("resetting\u2026", null);
+    db.ref(`users/${currentUser.uid}/cp`).set(0)
+        .then(() => showResetStatus("\u2713 career reset in the cloud", true))
+        .catch(err => {
+            console.warn('[engine] cloud cp reset failed (db rules?):', err);
+            showResetStatus("\u26A0 cloud reset blocked \u2014 check db rules", false);
+        });
+}
+
+// transient feedback on the reset button. ok: true=success, false=error, null=in-progress
+function showResetStatus(msg, ok) {
+    const btn = document.getElementById('reset-career-btn');
+    if (!btn) return;
+    btn.textContent = msg;
+    btn.disabled = (ok === null);
+    btn.style.color = ok === true ? 'var(--green)' : (ok === false ? 'var(--loss)' : 'var(--ink-mute)');
+    btn.style.borderColor = ok === true ? 'var(--green)' : 'var(--loss)';
+    if (ok !== null) {
+        setTimeout(() => {
+            btn.textContent = 'Reset career progress';
+            btn.disabled = false;
+            btn.style.color = '';
+            btn.style.borderColor = '';
+        }, 2600);
+    }
 }
 
 function renderCareerLadder(cp) {
