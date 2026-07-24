@@ -230,6 +230,7 @@ auth.onAuthStateChanged(user => {
 
         authView.style.display = 'none';
         welcomeView.style.display = 'block';
+        preloadCatalog();
     } else {
         currentUser = null;
         welcomeView.style.display = 'none';
@@ -270,8 +271,21 @@ if (installAppBtn) {
     });
 }
 
+// Online multiplayer depends on Cloud Functions that drain moves_queue. Until
+// those are deployed, gate it behind a "coming soon" notice so it never enters a
+// dead lobby. Flip ONLINE_ENABLED to true once the backend is live.
+const ONLINE_ENABLED = false;
 btnOnline.addEventListener('click', () => {
     playSound(clickSound);
+    if (!ONLINE_ENABLED) {
+        const sub = btnOnline.querySelector('.btn-play-sub');
+        if (sub) {
+            const original = sub.textContent;
+            sub.textContent = 'coming in a future update — solo play is live';
+            setTimeout(() => { sub.textContent = original; }, 2600);
+        }
+        return;
+    }
     isMultiplayer = true;
     welcomeView.style.display = 'none';
     lobbyView.style.display = 'flex';
@@ -889,8 +903,11 @@ btnOffline.addEventListener('click', () => {
     opponentNameEl.textContent = 'CPU';
     opponentLivesEl.classList.add('hide-element');
     
-    const loaded = typeof loadOfflineState === 'function' ? loadOfflineState() : false;
-    
+    // no auto-restore: every offline game is a fresh start. exiting a game
+    // discards it (see the exit-confirm flow), so we never resume an old chain.
+    localStorage.removeItem('atlas_offline_save');
+    const loaded = false;
+
     if (!loaded) {
         lives = 3; score = 0; currentLetter = ''; 
         if (typeof usedPlayers !== 'undefined') usedPlayers.clear(); 
@@ -909,7 +926,7 @@ btnOffline.addEventListener('click', () => {
           ]).catch(() => ({}))
         : Promise.resolve({});
 
-    loadPlayersData().then(async (data) => {
+    loadCatalogData().then(async (data) => {
         if (!data) {
             if (typeof setSystemMessage === 'function') setSystemMessage("player database unavailable.", true);
             if (typeof turnIndicator !== 'undefined') { turnIndicator.textContent = "LOAD FAILED"; turnIndicator.style.color = "var(--loss)"; }
@@ -980,6 +997,22 @@ async function loadPlayersData() {
     const resp = await fetch('./cricket_atlas.json');
     if (!resp.ok) throw new Error('local catalog fetch failed: ' + resp.status);
     return await resp.json();
+}
+
+// caches the raw catalog fetch so the first "Play offline" doesn't wait on it.
+// preloaded when the menu appears; retried on failure.
+let catalogDataPromise = null;
+function loadCatalogData() {
+    if (!catalogDataPromise) {
+        catalogDataPromise = loadPlayersData().catch(err => {
+            catalogDataPromise = null; // let a later attempt retry
+            throw err;
+        });
+    }
+    return catalogDataPromise;
+}
+function preloadCatalog() {
+    loadCatalogData().catch(() => {}); // fire-and-forget warmup; errors surface at play time
 }
 
 function shuffle(arr) {
@@ -1664,6 +1697,15 @@ async function handleMoveWrapper() {
         statusBox.textContent = currentLetter.toUpperCase();
         score++; scoreEl.textContent = score;
         renderFeedItem(inputName, extract, true, earnedCP);
+
+        // solo CP persistence: cloud functions aren't required for offline play.
+        // increment the player's CP directly (db rules allow monotonic increase),
+        // so career progression and mode unlocks actually work without a backend.
+        if (currentUser && earnedCP > 0) {
+            db.ref(`users/${currentUser.uid}/cp`).transaction(cur => (cur || 0) + earnedCP)
+                .catch(e => console.warn('[engine] offline cp write failed:', e));
+        }
+
         saveOfflineState();
         setTimeout(computerTurn, 1000);
     }
@@ -1796,24 +1838,50 @@ function getNameFormats(trueFullName, isUnresolvedAbbrev = false) {
 }
 
 const topExitBtn = document.getElementById('exit-game-btn');
+const exitConfirmModal = document.getElementById('exit-confirm-modal');
+const exitNoBtn = document.getElementById('exit-no-btn');
+const exitYesBtn = document.getElementById('exit-yes-btn');
+
+function performOfflineExit() {
+    localStorage.removeItem('atlas_offline_save');
+    returnToMainMenu();
+}
 
 if (topExitBtn) {
     topExitBtn.addEventListener('click', () => {
         playSound(clickSound);
         if (isMultiplayer && gameRef && currentUser) {
-            // security update: push exit/forfeit intent to server queue
+            // multiplayer: push forfeit intent to the server queue, then leave
             db.ref(`games/${currentGameId}/moves_queue`).push({
                 action: 'forfeit',
                 uid: currentUser.uid,
                 timestamp: firebase.database.ServerValue.TIMESTAMP
             });
-        } else {
-            localStorage.removeItem('atlas_offline_save');
+            returnToMainMenu();
+            return;
         }
-        
-        returnToMainMenu();
+        // offline: if a game is still in progress, confirm before discarding it
+        const gameInProgress = gameOverPanel && gameOverPanel.classList.contains('hide-element') && lives > 0;
+        if (gameInProgress && exitConfirmModal) {
+            exitConfirmModal.classList.remove('hide-element');
+        } else {
+            performOfflineExit();
+        }
     });
 }
+
+if (exitNoBtn) exitNoBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    if (exitConfirmModal) exitConfirmModal.classList.add('hide-element');
+});
+if (exitYesBtn) exitYesBtn.addEventListener('click', () => {
+    playSound(clickSound);
+    if (exitConfirmModal) exitConfirmModal.classList.add('hide-element');
+    performOfflineExit();
+});
+if (exitConfirmModal) exitConfirmModal.addEventListener('click', (e) => {
+    if (e.target === exitConfirmModal) exitConfirmModal.classList.add('hide-element');
+});
 
 async function resolveFullName(queryName, fast = false) {
     const fetchWiki = async (q) => (await fetch(`https://en.wikipedia.org/w/api.php?action=query&origin=*&format=json&generator=search&gsrsearch=${q}&gsrlimit=10&prop=extracts&exintro=1&explaintext=1`)).json();
