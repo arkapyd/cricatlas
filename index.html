@@ -25,17 +25,44 @@
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-auth-compat.js"></script>
     <script src="https://www.gstatic.com/firebasejs/10.10.0/firebase-database-compat.js"></script>
 
-    <!-- AdSense for H5 Games -->
+    <!-- AdSense for H5 Games (browser only). Inside an installed app (TWA /
+         standalone PWA), in-content AdSense is a policy grey area, so we suppress
+         it and degrade gracefully until a compliant AdMob path is wired. -->
     <script async src="https://pagead2.googlesyndication.com/pagead/js/adsbygoogle.js?client=ca-pub-2035524382353942"
         data-adbreak-test="on" crossorigin="anonymous"></script>
     <script>
-        window.adsbygoogle = window.adsbygoogle || [];
-        window.adBreak = window.adConfig = function(o) { adsbygoogle.push(o); };
-        adConfig({
-            preloadAdBreaks: 'on',
-            sound: 'on',
-            onReady: () => { console.log("H5 Ad API is ready."); }
-        });
+        (function () {
+            // true when running as an installed app rather than a browser tab
+            var isInstalledApp =
+                (window.matchMedia && (window.matchMedia('(display-mode: standalone)').matches
+                    || window.matchMedia('(display-mode: fullscreen)').matches))
+                || (document.referrer || '').indexOf('android-app://') === 0
+                || window.navigator.standalone === true;
+
+            // Set to true ONLY if you deliberately keep browser-style ads inside the app.
+            var IN_APP_WEB_ADS = false;
+
+            // graceful no-op: keeps game flow intact (interstitials skipped,
+            // ad-revives granted for free) without serving a web ad in-app
+            function noAdBreak(o) {
+                o = o || {};
+                if (o.beforeAd) o.beforeAd();
+                if (o.adViewed) o.adViewed();
+                if (o.afterAd) o.afterAd();
+            }
+
+            if (isInstalledApp && !IN_APP_WEB_ADS) {
+                window.adBreak = window.adConfig = noAdBreak;
+            } else {
+                window.adsbygoogle = window.adsbygoogle || [];
+                window.adBreak = window.adConfig = function (o) { window.adsbygoogle.push(o); };
+                window.adConfig({
+                    preloadAdBreaks: 'on',
+                    sound: 'on',
+                    onReady: function () { console.log("H5 Ad API is ready."); }
+                });
+            }
+        })();
     </script>
 </head>
 <body>
